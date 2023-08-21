@@ -3,6 +3,7 @@ Import ListNotations.
 
 (* Finite multisets *)
 Parameter bag: forall (T: Type), Type.
+Parameter Bempty: forall {T}, bag T.
 Parameter Bmem: forall {T}, T -> bag T -> Prop.
 Parameter Bplus: forall {T}, bag T -> bag T -> bag T.
 Parameter Binsert: forall {T}, T -> bag T -> bag T.
@@ -121,3 +122,38 @@ Inductive thread_step: state -> thread_state -> step_label -> state -> thread_st
     (ThreadState size' ph obs)
     []
 .
+
+Inductive step: config -> thread -> step_label -> config -> Prop :=
+| Step st tcfg t lab st' tcfg' tcfgs Ts1 Ts2:
+  t = length Ts1 ->
+  thread_step st tcfg lab st' tcfg' tcfgs ->
+  step (Config st (Ts1 ++ [tcfg] ++ Ts2)) t lab (Config st' (Ts1 ++ [tcfg'] ++ Ts2 ++ tcfgs))
+.
+
+Definition cfg_index := nat.
+Definition step_index := nat.
+
+(* We assume an infinite fair execution and we prove False. *)
+
+Parameter configs: cfg_index -> config.
+Parameter step_threads: step_index -> thread.
+Parameter labels: step_index -> step_label.
+Axiom steps_ok: forall i, step (configs i) (step_threads i) (labels i) (configs (S i)).
+(* Finished threads have no obligations *)
+Axiom finished_no_obs:
+  forall i st Ts1 ph obs Ts2,
+  configs i = Config st (Ts1 ++ [ThreadState size_zero ph obs] ++ Ts2) ->
+  obs = Bempty.
+(* Fairness: If at a config i, some thread has not finished, then it takes a step at some index j >= i. *)
+Axiom fair:
+  forall i st Ts1 size ph obs Ts2,
+  configs i = Config st (Ts1 ++ [ThreadState size ph obs] ++ Ts2) ->
+  size <> size_zero ->
+  exists j,
+  i <= j /\
+  step_threads j = length Ts1.
+
+Parameter CPs0: bag (thread_phase * degree).
+Parameter main_size0: cmd_size.
+Axiom configs0: configs 0 = Config (State CPs0 Bempty []) [ThreadState main_size0 [] Bempty].
+
