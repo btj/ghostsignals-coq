@@ -1,4 +1,4 @@
-Require Import List.
+Require Import List Classical ClassicalEpsilon.
 Import ListNotations.
 
 (* Finite multisets *)
@@ -156,4 +156,51 @@ Axiom fair:
 Parameter CPs0: bag (thread_phase * degree).
 Parameter main_size0: cmd_size.
 Axiom configs0: configs 0 = Config (State CPs0 Bempty []) [ThreadState main_size0 [] Bempty].
+
+(* Signals waited for infinitely often *)
+
+Section Signal.
+
+Variable s: signal.
+
+Definition Sinf := forall i, exists j ph d, i <= j /\ labels j = Wait ph s d.
+
+(* Assume s is not waited for infinitely often. *)
+
+Hypothesis not_Sinf: ~ Sinf.
+
+Definition is_not_waited_for_as_of i := forall j ph d, i <= j -> labels j <> Wait ph s d.
+
+Definition not_waited_for_as_of: {i | is_not_waited_for_as_of i}.
+Proof.
+  apply constructive_indefinite_description.
+  apply NNPP.
+  intro H.
+  apply not_Sinf.
+  intro i.
+  apply NNPP.
+  intro.
+  apply H.
+  exists i.
+  intros j ph d Hj.
+  intro.
+  apply H0.
+  exists j; exists  ph; exists d.
+  tauto.
+Qed.
+
+End Signal.
+
+(* Paths *)
+
+Definition forks_at(i: step_index)(forker: thread)(forkee: thread) :=
+  exists st Ts forkee_obs,
+  configs i = Config st Ts /\
+  step_threads i = forker /\
+  labels i = Fork forkee_obs /\
+  length Ts = forkee.
+
+Definition is_path(p: cfg_index -> thread) :=
+  p 0 = 0 /\
+  forall i, p (S i) = p i \/ forks_at i (p i) (p (S i)).
 
