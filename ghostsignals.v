@@ -1,21 +1,38 @@
-Require Import List Classical ClassicalEpsilon.
+Require Import Init.Wf Relations.Relation_Operators Wellfounded.Lexicographic_Product List Classical ClassicalDescription ClassicalEpsilon.
 Import ListNotations.
+
+Definition If{T}(P: Prop)(t1 t2: T) := if excluded_middle_informative P then t1 else t2.
 
 (* Finite multisets *)
 Parameter bag: forall (T: Type), Type.
 Parameter Bempty: forall {T}, bag T.
+Parameter Bsing: forall {T}, T -> bag T.
 Parameter Bmem: forall {T}, T -> bag T -> Prop.
 Parameter Bplus: forall {T}, bag T -> bag T -> bag T.
 Parameter Binsert: forall {T}, T -> bag T -> bag T.
 Parameter Bremove1: forall {T}, T -> bag T -> bag T.
+Parameter Bflatmap: forall {A B}, (A -> bag B) -> bag A -> bag B.
+Parameter Blt: forall {T}, (T -> T -> Prop) -> bag T -> bag T -> Prop.
+Axiom Blt_wf: forall {T} (Tlt: T -> T -> Prop), well_founded Tlt -> well_founded (Blt Tlt).
+
+Fixpoint Btimes{T}(n: nat)(e: T): bag T :=
+  match n with
+    O => Bempty
+  | S n0 => Binsert e (Btimes n0 e)
+  end.
 
 Parameter level: Type.
 Parameter level_lt: level -> level -> Prop.
+Axiom level_lt_wf: well_founded level_lt.
+
 Parameter degree: Type.
 Parameter degree_lt: degree -> degree -> Prop.
+Axiom degree_lt_wf: well_founded degree_lt.
+
 Parameter cmd_size: Type.
 Parameter size_zero: cmd_size.
 Parameter size_lt: cmd_size -> cmd_size -> Prop.
+Axiom size_lt_wf: well_founded size_lt.
 
 Inductive phasecomp := Forker | Forkee.
 Definition thread_phase := list phasecomp. (* To be read backwards: [Forker; Forkee] denotes a thread that was forked by the main thread and then forked a child thread. *)
@@ -161,33 +178,33 @@ Axiom configs0: configs 0 = Config (State CPs0 Bempty []) [ThreadState main_size
 
 Section Signal.
 
-Variable s: signal.
+  Variable s: signal.
 
-Definition Sinf := forall i, exists j ph d, i <= j /\ labels j = Wait ph s d.
+  Definition Sinf := forall i, exists j ph d, i <= j /\ labels j = Wait ph s d.
 
-(* Assume s is not waited for infinitely often. *)
+  (* Assume s is not waited for infinitely often. *)
 
-Hypothesis not_Sinf: ~ Sinf.
+  Hypothesis not_Sinf: ~ Sinf.
 
-Definition is_not_waited_for_as_of i := forall j ph d, i <= j -> labels j <> Wait ph s d.
+  Definition is_not_waited_for_as_of i := forall j ph d, i <= j -> labels j <> Wait ph s d.
 
-Definition not_waited_for_as_of: {i | is_not_waited_for_as_of i}.
-Proof.
-  apply constructive_indefinite_description.
-  apply NNPP.
-  intro H.
-  apply not_Sinf.
-  intro i.
-  apply NNPP.
-  intro.
-  apply H.
-  exists i.
-  intros j ph d Hj.
-  intro.
-  apply H0.
-  exists j; exists  ph; exists d.
-  tauto.
-Qed.
+  Definition not_waited_for_as_of: {i | is_not_waited_for_as_of i}.
+  Proof.
+    apply constructive_indefinite_description.
+    apply NNPP.
+    intro H.
+    apply not_Sinf.
+    intro i.
+    apply NNPP.
+    intro.
+    apply H.
+    exists i.
+    intros j ph d Hj.
+    intro.
+    apply H0.
+    exists j; exists  ph; exists d.
+    tauto.
+  Qed.
 
 End Signal.
 
@@ -200,7 +217,77 @@ Definition forks_at(i: step_index)(forker: thread)(forkee: thread) :=
   labels i = Fork forkee_obs /\
   length Ts = forkee.
 
-Definition is_path(p: cfg_index -> thread) :=
-  p 0 = 0 /\
-  forall i, p (S i) = p i \/ forks_at i (p i) (p (S i)).
+Section Path.
 
+  Variable p: cfg_index -> thread.
+
+  Definition is_path :=
+    p 0 = 0 /\
+    forall i, p (S i) = p i \/ forks_at i (p i) (p (S i)).
+
+  Hypothesis His_path: is_path.
+  
+  Definition path_is_infinite :=
+    forall j,
+    exists st Ts1 size ph obs Ts2,
+    configs j = Config st (Ts1 ++ [ThreadState size ph obs] ++ Ts2) /\
+    length Ts1 = p j /\
+    size <> size_zero.
+  
+  Hypothesis Hinf: path_is_infinite.
+  
+  Definition path_waits_for_signal_as_of(s: signal)(i: step_index) :=
+    exists j ph d,
+    i <= j /\
+    step_threads j = p j /\
+    labels j = Wait ph s d.
+  
+  Variable i0: step_index.
+  (* As of i0, p only waits for signals not waited for infinitely often *)
+  Hypothesis Hwaits_not_Sinf: forall s, path_waits_for_signal_as_of s i0 -> ~ Sinf s.
+  
+  Definition path_phase_at(i: cfg_index) :=
+    let (st, Ts) := configs i in
+    let (size, ph, obs) := nth (p i) Ts (ThreadState size_zero [] Bempty) in
+    ph.
+  
+  Definition path_fuel_at(i: cfg_index) :=
+    let (st, Ts) := configs i in
+    let (CPs, WPs, Ss) := st in
+    let filtered_CPs :=
+      Bflatmap (fun (cp: thread_phase * degree) =>
+          let (ph, d) := cp in
+          If (is_ancestor_of ph (path_phase_at i)) (Bsing d) Bempty
+        )
+        CPs
+    in
+    let filtered_WPs :=
+      Bflatmap (fun (wp: thread_phase * signal * degree) =>
+          match wp with
+            (ph, s, d) =>
+            If (is_ancestor_of ph (path_phase_at i)) (
+              match excluded_middle_informative (Sinf s) with
+                left _ => Bempty
+              | right HSinf => Btimes (proj1_sig (not_waited_for_as_of s HSinf) - i) d
+              end
+            ) Bempty
+          end
+        )
+        WPs
+    in
+    let (size, ph, obs) := nth (p i) Ts (ThreadState size_zero [] Bempty) in
+    (Bplus filtered_CPs filtered_WPs, size).
+  
+  Lemma path_fuel_decreases_at_path_step(i: step_index):
+    i0 <= i ->
+    step_threads i = p i ->
+    slexprod _ _ (Blt degree_lt) size_lt (path_fuel_at i) (path_fuel_at (S i)).
+  Admitted.
+  
+  Lemma path_fuel_does_not_increase_at_non_path_step(i: step_index):
+    i0 <= i ->
+    step_threads i <> p i ->
+    clos_refl _ (slexprod _ _ (Blt degree_lt) size_lt) (path_fuel_at i) (path_fuel_at (S i)).
+  Admitted.
+  
+  
