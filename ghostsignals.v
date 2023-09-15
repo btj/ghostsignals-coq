@@ -759,3 +759,14 @@ Proof.
       tauto.
     * tauto.
 Qed.
+
+Lemma infinite_path_is_infinite: path_is_infinite infinite_path.
+Proof.
+  intro i.
+  pose proof (infinite_path_lemma i i).
+  destruct H; try lia.
+  destruct H.
+  rewrite point_path_at_point in H.
+  subst.
+  assumption.
+Qed.
