@@ -66,6 +66,7 @@ Fixpoint Btimes{T}(n: nat)(e: T): bag T :=
 Parameter level: Type.
 Parameter level_lt: level -> level -> Prop.
 Axiom level_lt_wf: well_founded level_lt.
+Axiom level_inhabited: inhabited level.
 
 Parameter degree: Type.
 Parameter degree_lt: degree -> degree -> Prop.
@@ -770,3 +771,111 @@ Proof.
   subst.
   assumption.
 Qed.
+
+Section Not_Sinf.
+
+  Hypothesis Hnot_Sinf: forall s, ~ Sinf s.
+  
+  Lemma not_not_Sinf: False.
+  Proof.
+    apply (path_not_infinite infinite_path infinite_path_is_path infinite_path_is_infinite 0).
+    intros.
+    apply Hnot_Sinf.
+  Qed.
+
+End Not_Sinf.
+
+(* Some signal that is waited for infinitely often. *)
+Definition s_inf: {s | Sinf s}.
+Proof.
+  destruct (excluded_middle_informative (exists s, Sinf s)).
+  - apply constructive_indefinite_description.
+    assumption.
+  - elim not_not_Sinf.
+    intro s.
+    destruct (classic (Sinf s)).
+    + elim n.
+      exists s.
+      assumption.
+    + assumption.
+Qed.
+
+Inductive exists_dec{A}(P: A -> Prop): Type :=
+  exists_dec_ex x: P x -> exists_dec P
+| exists_dec_nex: ~ (exists x, P x) -> exists_dec P.
+
+Definition decide_exists{A}(P: A -> Prop): exists_dec P.
+Proof.
+  destruct (excluded_middle_informative (exists x, P x)).
+  - apply constructive_indefinite_description in e.
+    destruct e.
+    apply (exists_dec_ex _ x).
+    assumption.
+  - apply exists_dec_nex; assumption.
+Qed.
+
+Definition dummy_level: level.
+Proof.
+  assert (exists l: level, True). {
+    destruct level_inhabited.
+    exists X.
+    exact I.
+  }
+  apply constructive_indefinite_description in H.
+  destruct H.
+  apply x.
+Qed.
+
+Definition sig_lev s :=
+  match decide_exists (fun l =>
+      exists i b,
+      let (state, _) := configs i in
+      let (CPs, WPs, Ss) := state in
+      nth_error Ss s = Some (l, b)
+    ) with
+    exists_dec_ex _ l _ => l
+  | exists_dec_nex _ _ => dummy_level
+  end.
+
+Definition sig_lt s1 s2 := level_lt (sig_lev s1) (sig_lev s2).
+Lemma sig_lt_wf: well_founded sig_lt.
+Proof.
+  assert (forall l, Acc level_lt l -> forall s, l = sig_lev s -> Acc sig_lt s). {
+    induction 1.
+    intros.
+    constructor.
+    intros.
+    apply H0 with (y:=sig_lev y).
+    - subst.
+      apply H2.
+    - reflexivity.
+  }
+  intro.
+  apply (H (sig_lev a)).
+  - apply level_lt_wf.
+  - reflexivity.
+Qed.
+
+Definition s_inf0: {s | Sinf s /\ ~ exists s', Sinf s' /\ sig_lt s' s}.
+Proof.
+  assert (forall s, Acc sig_lt s -> Sinf s -> exists s', Sinf s' /\ ~ exists s'', Sinf s'' /\ sig_lt s'' s'). {
+    induction 1.
+    rename x into s.
+    destruct (classic (exists s', Sinf s' /\ sig_lt s' s)).
+    - destruct H1 as [s' [? ?]].
+      intros.
+      apply H0 with (1:=H2).
+      assumption.
+    - intros.
+      exists s.
+      tauto.
+  }
+  apply constructive_indefinite_description.
+  destruct s_inf.
+  apply H with (s:=x).
+  - apply sig_lt_wf.
+  - assumption.
+Qed.
+
+
+
