@@ -273,6 +273,11 @@ Proof.
   tauto.
 Qed.
 
+Lemma step_threads_alive i t:
+  step_threads i = t -> thread_alive i t.
+Proof.
+Admitted.
+
 Section Path.
 
   Variable p: cfg_index -> thread.
@@ -453,3 +458,304 @@ Section Path.
     }
     apply (H (path_fuel_at i0) i0); [ lia | reflexivity ].
   Qed.
+
+End Path.
+
+Lemma point_pred i t:
+  thread_alive (S i) t ->
+  thread_alive i t \/
+  exists t', forks_at i t' t.
+Proof.
+Admitted.
+
+Lemma decide {P Q}: P \/ Q -> {P} + {Q}.
+Proof.
+  intros.
+  destruct (excluded_middle_informative P); tauto.
+Qed.
+
+Fixpoint point_path i t: forall (Halive: thread_alive i t) (j: cfg_index), thread :=
+  match i as I return forall (Halive: thread_alive I t) (j: cfg_index), thread with
+    O => fun _ _ => 0
+  | S i => fun Halive j =>
+    match excluded_middle_informative (S i <= j) with
+      left Hle => t
+    | right Hnotle =>
+      match decide (point_pred i t Halive) with
+        left Halive' => point_path i t Halive' j
+      | right Hforks =>
+        let (t', Ht') := constructive_indefinite_description _ Hforks in
+        point_path i t' (step_threads_alive _ _ (forks_at_step_threads _ _ _ Ht')) j
+      end
+    end
+  end.
+  
+Lemma thread_alive_0 t: thread_alive 0 t -> t = 0.
+Proof.
+Admitted.
+
+Lemma point_path_is_path i t (Halive: thread_alive i t): is_path (point_path i t Halive).
+Proof.
+  revert t Halive.
+  induction i; intros.
+  - simpl.
+    split.
+    + reflexivity.
+    + intros.
+      left.
+      reflexivity.
+  - simpl.
+    split.
+    + destruct (excluded_middle_informative (S i <= 0)).
+      * lia.
+      * destruct (decide (point_pred i t Halive)).
+        -- destruct (IHi t t0).
+           assumption.
+        -- destruct (constructive_indefinite_description (fun t' => forks_at i t' t) e).
+           destruct (IHi x (step_threads_alive i x (forks_at_step_threads i x t f))).
+           assumption.
+    + intros j.
+      destruct (excluded_middle_informative (S i <= j)).
+      * left.
+        destruct (excluded_middle_informative (S i <= S j)); try lia.
+      * destruct (excluded_middle_informative (S i <= S j)).
+        -- assert (j = i). { lia. }
+           subst.
+           destruct (decide (point_pred i t Halive)).
+           ++ left.
+              destruct i.
+              ** simpl. apply thread_alive_0. assumption.
+              ** simpl.
+                 destruct (excluded_middle_informative (S i <= S i)); try lia.
+           ++ destruct (constructive_indefinite_description (fun t' => forks_at i t' t) e).
+              right.
+              destruct i.
+              ** simpl.
+                 pose proof f.
+                 apply forks_at_step_threads in H.
+                 apply step_threads_alive in H.
+                 apply thread_alive_0 in H.
+                 subst.
+                 assumption.
+              ** simpl.
+                 destruct (excluded_middle_informative (S i <= S i)); try lia.
+                 assumption.
+        -- destruct (decide (point_pred i t Halive)).
+           ++ destruct (IHi t t0).
+              apply H0.
+           ++ destruct (constructive_indefinite_description (fun t' => forks_at i t' t) e).
+              destruct (IHi x (step_threads_alive i x (forks_at_step_threads i x t f))).
+              apply H0.
+Qed.
+
+Definition subtree_alive_at i t j :=
+  exists t' (Halive: thread_alive j t'), point_path j t' Halive i = t.
+
+Definition has_infinite_subtree i t :=
+  forall j, i <= j -> subtree_alive_at i t j.
+
+Lemma subtree_alive_at_mono i t j k:
+  i <= j -> j <= k ->
+  subtree_alive_at i t k -> subtree_alive_at i t j.
+Proof.
+  intros Hj.
+  induction k; intros.
+  - assert (j = 0). { lia. }
+    subst.
+    assumption.
+  - destruct (classic (j = S k)).
+    + subst.
+      assumption.
+    + assert (j <= k). { lia. }
+      pose proof (IHk H2).
+      clear IHk H H1.
+      destruct H0 as [t' [Halive Ht']].
+      apply H3.
+      clear H3.
+      simpl in Ht'.
+      destruct (excluded_middle_informative (S k <= i)); try lia.
+      destruct (decide (point_pred k t' Halive)).
+      * exists t'.
+        exists t0.
+        assumption.
+      * destruct (constructive_indefinite_description (fun t'' => forks_at k t'' t') e).
+        exists x.
+        exists (step_threads_alive k x (forks_at_step_threads k x t' f)).
+        apply Ht'.
+Qed.
+
+Lemma not_forall_exists_not{A}(P: A -> Prop):
+  ~ (forall x, P x) -> exists x, ~ P x.
+Proof.
+  intros.
+  destruct (classic (exists x, ~ P x)). { assumption. }
+  elim H.
+  intros.
+  destruct (classic (P x)). { assumption. }
+  elim H0.
+  exists x.
+  assumption.
+Qed.
+
+Lemma point_path_at_point i t (Halive: thread_alive i t):
+  point_path i t Halive i = t.
+Proof.
+  destruct i.
+  - pose proof (thread_alive_0 _ Halive).
+    subst.
+    reflexivity.
+  - simpl.
+    destruct (excluded_middle_informative (S i <= S i)); try lia.
+Qed.
+
+Lemma forks_at_unique i t t' t'':
+  forks_at i t t' ->
+  forks_at i t t'' ->
+  t' = t''.
+Proof.
+Admitted.
+
+Lemma subtree_cases i t j t' (Halive: thread_alive j t'):
+  S i <= j ->
+  point_path j t' Halive i = t ->
+  point_path j t' Halive (S i) = t \/
+  exists t'', forks_at i t t'' /\ point_path j t' Halive (S i) = t''.
+Proof.
+  revert t' Halive.
+  induction j; intros. { lia. }
+  simpl in *.
+  destruct (excluded_middle_informative (S j <= i)); try lia.
+  destruct (excluded_middle_informative (S j <= S i)).
+  - assert (i = j). { lia. } subst j.
+    destruct (decide (point_pred i t' Halive)).
+    + subst.
+      left.
+      rewrite point_path_at_point.
+      reflexivity.
+    + destruct (constructive_indefinite_description (fun t'' => forks_at i t'' t') e).
+      right.
+      rewrite point_path_at_point in H0.
+      subst.
+      exists t'.
+      tauto.
+  - destruct (decide (point_pred j t' Halive)).
+    + apply IHj.
+      * lia.
+      * assumption.
+    + destruct (constructive_indefinite_description (fun t'' => forks_at j t'' t') e).
+      apply IHj.
+      * lia.
+      * assumption.
+Qed.
+
+Fixpoint infinite_path i :=
+  match i with
+    O => 0
+  | S i =>
+    let t := infinite_path i in
+    match excluded_middle_informative (has_infinite_subtree (S i) t) with
+      left _ => t
+    | right _ =>
+      match excluded_middle_informative (exists t', forks_at i t t') with
+        left H =>
+        let (t', Ht') := constructive_indefinite_description _ H in
+        t'
+      | right _ =>
+        t (* Can't happen *)
+      end
+    end
+  end.
+
+Lemma infinite_path_lemma i: has_infinite_subtree i (infinite_path i).
+Proof.
+  induction i.
+  - intros j Hj.
+    exists (step_threads j).
+    assert (thread_alive j (step_threads j)). {apply step_threads_alive. reflexivity. }
+    exists H.
+    destruct (point_path_is_path j (step_threads j) H).
+    assumption.
+  - simpl.
+    set (t:=infinite_path i).
+    destruct (excluded_middle_informative (has_infinite_subtree (S i) t)).
+    + assumption.
+    + apply not_forall_exists_not in n.
+      destruct n as [j Hj].
+      assert (S i <= j). {
+        destruct (classic (S i <= j)). { assumption. }
+        elim Hj.
+        intros.
+        elim (H H0).
+      }
+      assert (~ subtree_alive_at (S i) t j). {
+        intro.
+        apply Hj.
+        tauto.
+      }
+      clear Hj.
+      destruct (excluded_middle_informative (exists t', forks_at i t t')).
+      * destruct e as [t' Ht'].
+        intros k Hk.
+        destruct (classic (j <= k)).
+        -- pose proof (IHi k).
+           destruct H2 as [t'' [Halive Ht'']]. { lia. }
+           apply subtree_cases in Ht''. 2:{ lia. }
+           destruct Ht''.
+           ++ assert (subtree_alive_at (S i) t k). {
+                exists t''. exists Halive.
+                assumption.
+              }
+              apply subtree_alive_at_mono with (j:=j) in H3. 2:{ lia. } 2:{ assumption. }
+              elim (H0 H3).
+           ++ destruct H2 as [t'_ [Ht'_ ?]].
+              apply forks_at_unique with (1:=Ht') in Ht'_.
+              subst t'_.
+              destruct (constructive_indefinite_description (forks_at i t) (ex_intro (fun t' => forks_at i t t') t' Ht')).
+              apply forks_at_unique with (1:=Ht') in f.
+              subst x.
+              exists t''. exists Halive.
+              assumption.
+        -- destruct (constructive_indefinite_description (forks_at i t) (ex_intro (fun t' => forks_at i t t') t' Ht')).
+           apply forks_at_unique with (1:=Ht') in f.
+           subst x.
+           apply subtree_alive_at_mono with (k:=j); try lia.
+           destruct (IHi j); try lia.
+           destruct H2 as [Halive ?].
+           apply subtree_cases in H2. 2:{ lia. }
+           destruct H2.
+           ++ elim H0.
+              exists x.
+              exists Halive.
+              assumption.
+           ++ destruct H2 as [t'' [? ?]].
+              apply forks_at_unique with (1:=Ht') in H2.
+              subst t''.
+              exists x.
+              exists Halive.
+              assumption.
+      * elim H0.
+        destruct (IHi j); try lia.
+        destruct H1.
+        apply subtree_cases in H1; try lia.
+        destruct H1.
+        -- exists x.
+           exists x0.
+           assumption.
+        -- destruct H1 as [? [? ?]].
+           elim n.
+           exists x1.
+           assumption.
+Qed.
+
+Lemma infinite_path_is_path: is_path infinite_path.
+Proof.
+  split.
+  - reflexivity.
+  - intro i.
+    simpl.
+    destruct (excluded_middle_informative (has_infinite_subtree (S i) (infinite_path i))). { tauto. }
+    destruct (excluded_middle_informative (exists t', forks_at i (infinite_path i) t')).
+    * destruct (constructive_indefinite_description (forks_at i (infinite_path i)) e).
+      tauto.
+    * tauto.
+Qed.
