@@ -111,7 +111,7 @@ Record config := Config {
 Inductive step_label :=
 | Burn(consumes: (thread_phase * degree))(produces: bag (thread_phase * degree))
 | Fork(forkee_obs: bag signal)
-| CreateSignal(lev: level)
+| CreateSignal(s: signal)(lev: level)
 | SetSignal(s: signal)
 | CreateWaitPerm(s: signal)(consumes: (thread_phase * degree))(produces: degree)
 | Wait(ph: thread_phase)(s: signal)(d: degree)
@@ -139,14 +139,15 @@ Inductive thread_step: state -> thread_state -> step_label -> state -> thread_st
     (State CPs WPs Ss)
     (ThreadState size' (Forker::ph) obs)
     [ThreadState size'' (Forkee::ph) forkee_obs]
-| SCreateSignal CPs WPs Ss size ph obs lev size':
+| SCreateSignal CPs WPs Ss size ph obs s lev size':
   size_lt size' size ->
+  s = length Ss ->
   thread_step
     (State CPs WPs Ss)
     (ThreadState size ph obs)
-    (CreateSignal lev)
+    (CreateSignal s lev)
     (State CPs WPs (Ss ++ [(lev, false)]))
-    (ThreadState size' ph (Binsert (length Ss) obs))
+    (ThreadState size' ph (Binsert s obs))
     []
 | SSetSignal CPs WPs Ss1 lev Ss2 size ph obs size':
   size_lt size' size ->
@@ -223,19 +224,21 @@ Parameter CPs0: bag (thread_phase * degree).
 Parameter main_size0: cmd_size.
 Axiom configs0: configs 0 = Config (State CPs0 Bempty []) [ThreadState main_size0 [] Bempty].
 
+Definition step_waits_for i s := exists ph d, labels i = Wait ph s d.
+
 (* Signals waited for infinitely often *)
 
 Section Signal.
 
   Variable s: signal.
-
-  Definition Sinf := forall i, exists j ph d, i <= j /\ labels j = Wait ph s d.
+  
+  Definition Sinf := forall i, exists j, i <= j /\ step_waits_for j s.
 
   (* Assume s is not waited for infinitely often. *)
 
   Hypothesis not_Sinf: ~ Sinf.
 
-  Definition is_not_waited_for_as_of i := forall j ph d, i <= j -> labels j <> Wait ph s d.
+  Definition is_not_waited_for_as_of i := forall j, i <= j -> ~ step_waits_for j s.
 
   Definition not_waited_for_as_of: {i | is_not_waited_for_as_of i}.
   Proof.
@@ -248,10 +251,10 @@ Section Signal.
     intro.
     apply H.
     exists i.
-    intros j ph d Hj.
+    intros j Hj.
     intro.
     apply H0.
-    exists j; exists  ph; exists d.
+    exists j.
     tauto.
   Qed.
 
@@ -276,6 +279,11 @@ Qed.
 
 Lemma step_threads_alive i t:
   step_threads i = t -> thread_alive i t.
+Proof.
+Admitted.
+
+Lemma step_threads_alive' i:
+  thread_alive i (step_threads i).
 Proof.
 Admitted.
 
@@ -334,10 +342,10 @@ Section Path.
   Hypothesis Hinf: path_is_infinite.
   
   Definition path_waits_for_signal_as_of(s: signal)(i: step_index) :=
-    exists j ph d,
+    exists j,
     i <= j /\
     step_threads j = p j /\
-    labels j = Wait ph s d.
+    step_waits_for j s.
   
   Variable i0: step_index.
   (* As of i0, p only waits for signals not waited for infinitely often *)
@@ -494,6 +502,29 @@ Fixpoint point_path i t: forall (Halive: thread_alive i t) (j: cfg_index), threa
 Lemma thread_alive_0 t: thread_alive 0 t -> t = 0.
 Proof.
 Admitted.
+
+Lemma point_path_alive i t (Halive: thread_alive i t) j:
+  j <= i ->
+  thread_alive j (point_path i t Halive j).
+Proof.
+  revert i t Halive.
+  induction i; intros.
+  - assert (j = 0). { lia. } subst.
+    simpl.
+    pose proof (thread_alive_0 _ Halive).
+    subst.
+    assumption.
+  - simpl.
+    destruct (excluded_middle_informative (S i <= j)).
+    + assert (j = S i). { lia. } subst.
+      assumption.
+    + destruct (decide (point_pred i t Halive)).
+      * apply IHi.
+        lia.
+      * destruct (constructive_indefinite_description (fun t' => forks_at i t' t) e).
+        apply IHi.
+        lia.
+Qed.
 
 Lemma point_path_is_path i t (Halive: thread_alive i t): is_path (point_path i t Halive).
 Proof.
@@ -856,7 +887,7 @@ Proof.
   - reflexivity.
 Qed.
 
-Definition s_inf0: {s | Sinf s /\ ~ exists s', Sinf s' /\ sig_lt s' s}.
+Definition s_inf0_: {s | Sinf s /\ ~ exists s', Sinf s' /\ sig_lt s' s}.
 Proof.
   assert (forall s, Acc sig_lt s -> Sinf s -> exists s', Sinf s' /\ ~ exists s'', Sinf s'' /\ sig_lt s'' s'). {
     induction 1.
@@ -877,5 +908,176 @@ Proof.
   - assumption.
 Qed.
 
+Definition s_inf0 := proj1_sig s_inf0_.
 
+Lemma Sinf_s_inf0: Sinf s_inf0.
+Proof.
+  destruct (proj2_sig s_inf0_).
+  apply H.
+Qed.
 
+Lemma s_inf0_minimal s: Sinf s -> ~ sig_lt s s_inf0.
+Proof.
+  destruct (proj2_sig s_inf0_).
+  intros; intro.
+  elim H0.
+  exists s.
+  tauto.
+Qed.
+
+Definition step_creates_signal i s := exists l, labels i = CreateSignal s l.
+
+Definition signal_creation_step s :=
+  match decide_exists (fun i => step_creates_signal i s) with
+    exists_dec_ex _ i _ => i
+  | exists_dec_nex _ _ => 0
+  end.
+
+Lemma wait_after_creates i s:
+  step_waits_for i s ->
+  signal_creation_step s <= i /\ step_creates_signal (signal_creation_step s) s.
+Proof.
+Admitted.
+
+Lemma step_creates_signal_s_inf0:
+  step_creates_signal (signal_creation_step s_inf0) s_inf0.
+Proof.
+  pose proof (Sinf_s_inf0 0).
+  destruct H as [j [? ?]].
+  apply wait_after_creates in H0.
+  destruct H0.
+  assumption.
+Qed.
+
+Inductive thread_holds_obligation_at i t s: Prop :=
+  thread_holds_obligation_at_intro st Ts1 sz ph obs Ts2:
+  length Ts1 = t ->
+  configs i = Config st (Ts1 ++ [ThreadState sz ph (Binsert s obs)] ++ Ts2) ->
+  thread_holds_obligation_at i t s.
+
+Lemma thread_holds_obligation_after_signal_creation_step i s:
+  step_creates_signal i s ->
+  thread_holds_obligation_at (S i) (step_threads i) s.
+Proof.
+Admitted.
+
+Definition ob_thread s i :=
+  match decide_exists (fun t => thread_holds_obligation_at i t s) with
+    exists_dec_ex _ t _ => t
+  | exists_dec_nex _ _ => 0
+  end.
+
+Lemma wait_holds_ob i s:
+  step_waits_for i s ->
+  forall j,
+  signal_creation_step s < j -> j <= S i ->
+  thread_holds_obligation_at j (ob_thread s j) s.
+Proof.
+Admitted.
+
+Lemma thread_holds_obligation_at_alive i t s:
+  thread_holds_obligation_at i t s -> thread_alive i t.
+Proof.
+Admitted.
+
+Lemma thread_holds_obligation_at_unique i t s:
+  thread_holds_obligation_at i t s -> t = ob_thread s i.
+Proof.
+Admitted.
+
+Lemma thread_holds_obligation_at_pred i t s:
+  thread_holds_obligation_at (S i) t s ->
+  i = signal_creation_step s \/
+  thread_holds_obligation_at i t s \/
+  exists t', forks_at i t' t /\ thread_holds_obligation_at i t' s.
+Proof.
+Admitted.
+
+Lemma wait_ob_lt i s s':
+  step_waits_for i s ->
+  thread_holds_obligation_at i (step_threads i) s' ->
+  sig_lt s s'.
+Proof.
+Admitted.
+
+Definition s_inf0_ob_path i :=
+  match excluded_middle_informative (signal_creation_step s_inf0 < i) with
+    left _ => ob_thread s_inf0 i
+  | right _ => point_path (signal_creation_step s_inf0) (step_threads (signal_creation_step s_inf0)) (step_threads_alive' (signal_creation_step s_inf0)) i
+  end.
+
+Lemma s_inf0_ob_path_holds_obligation i:
+  signal_creation_step s_inf0 < i ->
+  thread_holds_obligation_at i (s_inf0_ob_path i) s_inf0.
+Proof.
+  intros.
+  destruct (Sinf_s_inf0 i) as [j [? ?]].
+  apply wait_holds_ob with (j:=i) in H1; try lia.
+  unfold s_inf0_ob_path.
+  destruct (excluded_middle_informative (signal_creation_step s_inf0 < i)); try lia.
+  assumption.
+Qed.
+
+Lemma s_inf0_ob_path_is_path: is_path s_inf0_ob_path.
+Proof.
+  split.
+  - unfold s_inf0_ob_path.
+    destruct (excluded_middle_informative (signal_creation_step s_inf0 < 0)); try lia.
+    apply point_path_is_path.
+  - intros.
+    pose proof (s_inf0_ob_path_holds_obligation (S i)).
+    unfold s_inf0_ob_path in *.
+    destruct (excluded_middle_informative (signal_creation_step s_inf0 < i)).
+    + destruct (excluded_middle_informative (signal_creation_step s_inf0 < S i)); try lia.
+      apply thread_holds_obligation_at_pred in H; try lia.
+      destruct H; try lia.
+      destruct H.
+      * apply thread_holds_obligation_at_unique in H.
+        tauto.
+      * destruct H as [t' [? ?]].
+        right.
+        apply thread_holds_obligation_at_unique in H0.
+        subst.
+        assumption.
+    + destruct (excluded_middle_informative (signal_creation_step s_inf0 < S i)).
+      * assert (signal_creation_step s_inf0 = i). { lia. }
+        subst.
+        left.
+        rewrite point_path_at_point.
+        pose proof (thread_holds_obligation_after_signal_creation_step (signal_creation_step s_inf0) s_inf0).
+        apply thread_holds_obligation_at_unique in H0. 2:{
+          apply step_creates_signal_s_inf0.
+        }
+        congruence.
+      * apply point_path_is_path.
+Qed.
+
+Lemma s_inf0_ob_path_is_infinite: path_is_infinite s_inf0_ob_path.
+Proof.
+  intros j.
+  pose proof (s_inf0_ob_path_holds_obligation j).
+  unfold path_is_alive.
+  unfold s_inf0_ob_path in *.
+  destruct (excluded_middle_informative (signal_creation_step s_inf0 < j)).
+  - apply thread_holds_obligation_at_alive with (s:=s_inf0).
+    apply H.
+    assumption.
+  - apply point_path_alive.
+    lia.
+Qed.
+
+Theorem no_infinite_fair_executions: False.
+Proof.
+  apply (path_not_infinite s_inf0_ob_path) with (i0:=S (signal_creation_step s_inf0)).
+  - apply s_inf0_ob_path_is_path.
+  - apply s_inf0_ob_path_is_infinite.
+  - intros.
+    destruct H as [i [? [? ?]]].
+    lapply (s_inf0_ob_path_holds_obligation i). 2:{ lia. }
+    intros.
+    rewrite <- H0 in H2.
+    apply wait_ob_lt with (2:=H2) in H1.
+    intro.
+    apply s_inf0_minimal with (1:=H3).
+    assumption.
+Qed.
