@@ -285,7 +285,8 @@ Admitted.
 Lemma step_threads_alive' i:
   thread_alive i (step_threads i).
 Proof.
-Admitted.
+  apply step_threads_alive; reflexivity.
+Qed.
 
 Section Path.
 
@@ -501,7 +502,13 @@ Fixpoint point_path i t: forall (Halive: thread_alive i t) (j: cfg_index), threa
   
 Lemma thread_alive_0 t: thread_alive 0 t -> t = 0.
 Proof.
-Admitted.
+  intros ALIVE.
+  inversion ALIVE; subst. rewrite configs0 in H.
+  inversion H; subst.
+  destruct Ts1 eqn:CONTRA.
+  - trivial.
+  - inversion H3. destruct l; try inversion H4.
+Qed.
 
 Lemma point_path_alive i t (Halive: thread_alive i t) j:
   j <= i ->
@@ -645,7 +652,13 @@ Lemma forks_at_unique i t t' t'':
   forks_at i t t'' ->
   t' = t''.
 Proof.
-Admitted.
+  intros F1 F2.
+  unfold forks_at in *.
+  destruct F1 as [? [? [? [? [? [? ?]]]]]].
+  destruct F2 as [? [? [? [? [? [? ?]]]]]].
+  rename H into CFG, H3 into CFG'. rewrite CFG' in CFG.
+  inversion CFG; subst; trivial.
+Qed.
 
 Lemma subtree_cases i t j t' (Halive: thread_alive j t'):
   S i <= j ->
@@ -959,7 +972,16 @@ Lemma thread_holds_obligation_after_signal_creation_step i s:
   step_creates_signal i s ->
   thread_holds_obligation_at (S i) (step_threads i) s.
 Proof.
-Admitted.
+  intros CREATE.
+  pose proof (steps_ok i) as S_CREATE.
+  destruct CREATE. rename H into LABEL; rewrite LABEL in S_CREATE.
+  inversion S_CREATE; subst.
+  rename H1 into LENGTH; rewrite LENGTH.
+  rename H4 into TSTEP; inversion TSTEP; subst.
+  rename H0 into CFG_SI; rewrite app_nil_r in CFG_SI.
+  econstructor 1 with (Ts2 := Ts2); auto. simpl.
+  rewrite <- CFG_SI. eauto.
+Qed.
 
 Definition ob_thread s i :=
   match decide_exists (fun t => thread_holds_obligation_at i t s) with
