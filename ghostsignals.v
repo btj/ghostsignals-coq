@@ -56,6 +56,7 @@ Parameter Bflatmap: forall {A B}, (A -> bag B) -> bag A -> bag B.
 Parameter Blt: forall {T}, (T -> T -> Prop) -> bag T -> bag T -> Prop.
 Axiom Blt_trans: forall {T} (Tlt: T -> T -> Prop), transitive _ Tlt -> transitive _ (Blt Tlt).
 Axiom Blt_wf: forall {T} (Tlt: T -> T -> Prop), well_founded Tlt -> well_founded (Blt Tlt).
+Axiom binsert_not_empty : forall A (e : A) (b : bag A), Binsert e b <> Bempty.
 
 Fixpoint Btimes{T}(n: nat)(e: T): bag T :=
   match n with
@@ -78,6 +79,9 @@ Parameter size_zero: cmd_size.
 Parameter size_lt: cmd_size -> cmd_size -> Prop.
 Axiom size_lt_trans: transitive _ size_lt.
 Axiom size_lt_wf: well_founded size_lt.
+Axiom size_zero_minimal : forall sz, size_lt sz size_zero -> False.
+Axiom cmd_size_eq_dec : forall sz sz' : cmd_size, {sz = sz'} + {sz <> sz'}.
+
 
 Inductive phasecomp := Forker | Forkee.
 Definition thread_phase := list phasecomp. (* To be read backwards: [Forker; Forkee] denotes a thread that was forked by the main thread and then forked a child thread. *)
@@ -277,10 +281,27 @@ Proof.
   tauto.
 Qed.
 
+Lemma thread_step_alive : forall st tcfg l st' tcfg' tcfgs
+    (TSTEP : thread_step st tcfg l st' tcfg' tcfgs),
+  (size tcfg <> size_zero).
+Proof.
+  intros. destruct TSTEP.
+  all: auto; simpl.
+  all: rename size0 into sz.
+  all: destruct (cmd_size_eq_dec sz size_zero); auto;
+    rename e into CONTRA; rewrite CONTRA in H; apply size_zero_minimal in H; contradiction.
+Qed.
+
 Lemma step_threads_alive i t:
   step_threads i = t -> thread_alive i t.
 Proof.
-Admitted.
+  intros STEP_I.
+  pose proof (steps_ok i) as STEP; rewrite STEP_I in STEP; clear STEP_I.
+  inversion STEP as [? ? ? ? ? ? ? ? ? ? TSTEP_I CFG_I TMP1 TMP2 CFG_SI]; subst.
+  pose proof (thread_step_alive _ _ _ _ _ _ TSTEP_I).
+  constructor 1 with (st := st) (size := (size tcfg)) (ph := (phase tcfg)) (obs := (obs tcfg)) (Ts2 := Ts2); auto.
+  rewrite <- CFG_I. destruct tcfg. subst. auto.
+Qed.
 
 Lemma step_threads_alive' i:
   thread_alive i (step_threads i).
@@ -1000,7 +1021,14 @@ Admitted.
 Lemma thread_holds_obligation_at_alive i t s:
   thread_holds_obligation_at i t s -> thread_alive i t.
 Proof.
-Admitted.
+  intros H. inversion H; subst; simpl in *.
+  rename H1 into CFG.
+  pose proof (finished_no_obs i st Ts1 ph (Binsert s obs0) Ts2) as CONTRA; simpl in CONTRA.
+  constructor 1 with (st := st) (size := sz) (ph := ph) (obs := Binsert s obs0) (Ts2 := Ts2); auto.
+  destruct (cmd_size_eq_dec sz size_zero); auto.
+  rewrite <- e in CONTRA. specialize (CONTRA CFG).
+  pose proof (binsert_not_empty _ s obs0). contradiction.
+Qed.
 
 Lemma thread_holds_obligation_at_unique i t s:
   thread_holds_obligation_at i t s -> t = ob_thread s i.
