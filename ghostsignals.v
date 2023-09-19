@@ -492,12 +492,148 @@ Section Path.
 
 End Path.
 
+Lemma cmd_greater_not_zero :
+  forall sz sz',
+  size_lt sz sz' ->
+  sz' <> size_zero.
+Proof.
+  intros ? ? H.
+  destruct (cmd_size_eq_dec sz' size_zero); auto.
+  subst. exfalso. apply (size_zero_minimal _ H).
+Qed.
+
+Lemma preserve_suspended_threads : forall i idx
+    (STEP : step (configs i) (step_threads i) (labels i) (configs (S i)))
+    (IDX_IN_BOUNDS : idx < length (threads (configs i)))
+    (IDX_SUSPENDED : idx <> (step_threads i)),
+  (nth idx (threads (configs i)) (ThreadState size_zero [] Bempty)) = (nth idx (threads (configs (S i))) (ThreadState size_zero [] Bempty)).
+Proof.
+  intros.
+    inversion STEP; subst. rename H into CFG_I, H0 into CFG_SI.
+    (* rewrite CFG_I. rewrite CFG_SI; simpl. *)
+    destruct (Compare_dec.lt_dec idx (length Ts1)).
+    - simpl. rewrite 2 app_nth1; auto.
+    - assert (Hidx_gt: idx > length Ts1) by lia.
+      simpl.
+      rewrite 2 app_nth2; try lia.
+      pose proof (PeanoNat.Nat.sub_gt idx (length Ts1) Hidx_gt).
+      replace (tcfg :: Ts2) with ([tcfg] ++ Ts2) by auto.
+      replace (tcfg' :: Ts2 ++ tcfgs) with ([tcfg'] ++ Ts2 ++ tcfgs) by auto.
+      replace (idx - length Ts1) with (1 + ((idx - length Ts1) -1 )) by lia.
+      replace 1 with (length [tcfg]).
+      replace (length [tcfg]) with (length [tcfg']) by (simpl; auto). 2: { simpl; auto. }
+      rewrite app_nth2_plus. simpl.
+      rewrite app_nth1; auto. rewrite <- CFG_I in IDX_IN_BOUNDS; simpl in *.
+      rewrite app_length in IDX_IN_BOUNDS.
+      simpl in IDX_IN_BOUNDS. lia.
+Qed.
+
+Lemma fork_extra_thread i : forall
+  (STEP : step (configs i) (step_threads i) (labels i) (configs (S i)))
+  (LEN_LT: length (threads (configs i)) < length (threads (configs (S i)))),
+  exists obs',
+    (labels i) = Fork obs'.
+Proof.
+  intros.
+  inversion STEP as [? ? ? ? ? ? ? ? ? STEP_POS TSTEP CFG_I TMP1 TMP2 CFG_SI'].
+  inversion TSTEP.
+  (* All but SFork are contradictions/copy paste. *)
+  - rename H6 into TCFGS; rewrite <- TCFGS in CFG_SI';
+      rewrite <- CFG_I, <- CFG_SI' in LEN_LT; simpl in LEN_LT;
+      rewrite 2 app_length in LEN_LT; simpl in LEN_LT;
+      rewrite app_length in LEN_LT; simpl in LEN_LT; lia.
+  - (* SFork *)
+    exists forkee_obs; auto.
+  - rename H6 into TCFGS; rewrite <- TCFGS in CFG_SI';
+    rewrite <- CFG_I, <- CFG_SI' in LEN_LT; simpl in LEN_LT;
+    rewrite 2 app_length in LEN_LT; simpl in LEN_LT;
+    rewrite app_length in LEN_LT; simpl in LEN_LT; lia.
+  - rename H5 into TCFGS; rewrite <- TCFGS in CFG_SI';
+    rewrite <- CFG_I, <- CFG_SI' in LEN_LT; simpl in LEN_LT;
+    rewrite 2 app_length in LEN_LT; simpl in LEN_LT;
+    rewrite app_length in LEN_LT; simpl in LEN_LT; lia.
+  - rename H7 into TCFGS; rewrite <- TCFGS in CFG_SI';
+    rewrite <- CFG_I, <- CFG_SI' in LEN_LT; simpl in LEN_LT;
+    rewrite 2 app_length in LEN_LT; simpl in LEN_LT;
+    rewrite app_length in LEN_LT; simpl in LEN_LT; lia.
+  - rename H8 into TCFGS; rewrite <- TCFGS in CFG_SI';
+    rewrite <- CFG_I, <- CFG_SI' in LEN_LT; simpl in LEN_LT;
+    rewrite 2 app_length in LEN_LT; simpl in LEN_LT;
+    rewrite app_length in LEN_LT; simpl in LEN_LT; lia.
+Qed.
+
 Lemma point_pred i t:
   thread_alive (S i) t ->
   thread_alive i t \/
   exists t', forks_at i t' t.
 Proof.
-Admitted.
+  (* Find same thread in previous state
+   * Either it exists (at the same index) or it is the forkee of a fork at step i
+   * New thread: Prior step must be the fork, thread_step_alive
+   * Otherwise: Either the thread of step (S i) was executing at step i or
+   * the thread state is the same as it is at (S i) *)
+  remember (ThreadState size_zero [] Bempty) as dead_thread.
+  intros ALIVE_SI.
+  inversion ALIVE_SI as [? ? sz ? os ? CFG_SI ? POS_T]; simpl in CFG_SI.
+  pose proof (steps_ok i) as STEP_I.
+  inversion STEP_I as [? ? ? ? ? ? ? ? ? STEP_POS TSTEP CFG_I TMP1 TMP2 CFG_SI'].
+   destruct (PeanoNat.Nat.eq_dec (length Ts0) (length Ts1)) as [Running|Suspended].
+  - (* Same thread, including Forker *)
+    left. subst. rewrite <- Running.
+    pose proof (thread_step_alive _ _ _ _ _ _ TSTEP).
+    constructor 1 with (st := st0) (size := size tcfg) (ph := phase tcfg) (obs := obs tcfg) (Ts2 := Ts3); auto.
+    rewrite <- CFG_I; simpl; auto. destruct tcfg; simpl. auto.
+  - (* Different thread *)
+    destruct (PeanoNat.Nat.eq_dec (length (threads (configs (S i)))) (length (threads (configs i)))) as [LEN_EQ|LEN_NEQ].
+    + (* Not a fork: all suspended threads are preserved *)
+      left.
+      assert (TEMP: (length Ts1) < length (threads (configs i))).
+      { rewrite <- LEN_EQ. rewrite CFG_SI; simpl.
+        rewrite app_length. simpl; lia. }
+      assert (TEMP': length Ts1 <> length Ts0) by auto. rewrite <- STEP_POS in TEMP'.
+      pose proof (preserve_suspended_threads i (length Ts1) STEP_I TEMP TEMP') as PRESERVE.
+      pose proof (@nth_split _ (length Ts1) (threads (configs i)) dead_thread) TEMP as PARTITION.
+      clear TEMP TEMP'.
+      destruct PARTITION as [PREFIX [SUFFIX [ALT_DECOMP LENEQ_PREFIX_TS1]]].
+      rewrite <- Heqdead_thread in PRESERVE. rewrite <- LENEQ_PREFIX_TS1.
+      rewrite PRESERVE in ALT_DECOMP. rewrite CFG_SI in ALT_DECOMP; simpl in ALT_DECOMP.
+      rewrite nth_middle in ALT_DECOMP.
+      econstructor 1 with (st := st0) (Ts1 := PREFIX) (Ts2 := SUFFIX); eauto.
+        rewrite <- CFG_I. rewrite <- CFG_I in ALT_DECOMP. simpl in ALT_DECOMP. rewrite ALT_DECOMP. simpl. eauto.
+    + (* Fork executing at i *)
+      pose proof (fork_extra_thread i STEP_I) as FORK.
+      assert (LEN_LE: length (threads (configs i)) <= length (threads (configs (S i)))). {
+        rewrite <- CFG_I, <- CFG_SI'; simpl. rewrite 2 app_length; simpl. rewrite app_length; simpl. lia. }
+      assert (LEN_LT: length (threads (configs i)) < length (threads (configs (S i)))) by lia.
+      destruct FORK as [obs' Label]; auto.
+      inversion TSTEP.
+      all:  try (rename H0 into CONTRA; rewrite <- CONTRA in Label; inversion Label).
+      (* Is the thread at S i the forkee? *)
+      destruct (PeanoNat.Nat.eq_dec (length (threads (configs i))) (length Ts1)) as [Forkee|Other].
+      * (* Forkee *)
+        right. unfold forks_at. exists (length Ts0), st0, (threads (configs i)), forkee_obs.
+        repeat split; auto.
+        rewrite <- CFG_I; auto.
+      * (* Suspended threads are stil preserved. Annoying duplication. *)
+        left.
+        assert (length Ts1 < length (threads (configs (S i)))). {
+          rewrite CFG_SI. simpl; rewrite app_length; simpl. lia. }
+        assert (length (threads (configs i)) + 1 = length (threads (configs (S i)))). {
+          rewrite <- CFG_SI', <- CFG_I. rename H7 into Tcfgs. rewrite <- Tcfgs. simpl.
+          rewrite 2 app_length; simpl; rewrite app_length; simpl; lia. }
+        assert (TEMP: (length Ts1) < length (threads (configs i))) by lia.
+        Search (step_threads i). rewrite <- STEP_POS in Suspended.
+        assert (TEMP': length Ts1 <> step_threads i) by auto.
+        pose proof (preserve_suspended_threads i (length Ts1) STEP_I TEMP TEMP') as PRESERVE.
+        pose proof (@nth_split _ (length Ts1) (threads (configs i)) dead_thread TEMP) as PARTITION.
+        clear TEMP TEMP'.
+        destruct PARTITION as [PREFIX [SUFFIX [ALT_DECOMP LENEQ_PREFIX_TS1]]].
+        rewrite <- Heqdead_thread in PRESERVE. rewrite <- LENEQ_PREFIX_TS1.
+        rewrite PRESERVE in ALT_DECOMP. rewrite CFG_SI in ALT_DECOMP; simpl in ALT_DECOMP.
+        rewrite nth_middle in ALT_DECOMP.
+        econstructor 1 with (st := st0) (Ts1 := PREFIX) (Ts2 := SUFFIX); eauto.
+          rewrite <- CFG_I. rewrite <- CFG_I in ALT_DECOMP. simpl in ALT_DECOMP. rewrite ALT_DECOMP. simpl. eauto.
+Qed.
 
 Lemma decide {P Q}: P \/ Q -> {P} + {Q}.
 Proof.
