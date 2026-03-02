@@ -1,3 +1,60 @@
+(*
+
+"Ghost signals" by Reinhard and Jacobs is an approach for verifying termination of busy-waiting concurrent programs.
+In this approach, given a busy-waiting program, one considers executions of this program under an *instrumented semantics*
+that consumes a *call permission* at each function call or loop backjump. In this instrumented semantics, infinite executions
+are impossible, since the stock of call permissions in the system decreases at each function call or loop backjump under a well-founded
+order. To allow busy-waiting loops, the instrumented programming language comes with ghost commands for creating and setting *ghost
+signals* and for performing `wait` operations that *produce* a call permission provided that a given signal has not yet been set. This
+enables the fueling of busy-waiting loops. Threads must not directly or indirectly wait for themselves: each signal is associated with
+a *level* from a well-founded universe of levels; creating a signal also burdens some thread with an *obligation* to set that signal;
+a thread may wait for a signal S only if the level of S is strictly less than the levels of the signals for which the thread holds an obligation.
+
+The call permissions produced by a `wait` operation must not be used to fuel the thread for which that `wait` operation is waiting. This is
+enforced by associating a *phase* with each thread. In the program's initial state, the main thread's phase is `[]`, the empty list. When
+a thread at a phase `ph` forks a child thread, the child thread's phase is `Forkee :: ph` and the parent thread's phase becomes `Forker :: ph`.
+Each call permission is associated with a phase. The call permission created by a `wait` operation is associated with the phase of the thread
+that performed the `wait` operation. A function call or loop backjump by a thread at a phase `ph` consumes a call permission associated with
+`ph` or an *ancestor phase* (i.e. a suffix) of `ph`. This rules out the possibility of a `wait` operation fueling the thread it is waiting for.
+
+Each call permission is also associated with a *degree* from a well-founded universe of degrees. A call permission at a higher degree can
+be *lowered* to N call permissions at a lower degree, for any N. A `wait` operation on a signal S requires a *wait permission* for S. creating
+a wait permission consumes a call permission at some degree `d` and associates some lower degree `d'` with the wait permission.
+A `wait` operation using a wait permission associated with a degree `d'` produces a call permission associated with `d'`.
+
+The file below is an outline for a proof that programs under such an instrumented semantics have no infinite executions under a fair scheduler.
+
+The proof goes as follows.
+
+By contradiction. Assume there is an infinite execution. 
+
+Let Sinf be the set of signals that are waited for infinitely often in this execution.
+
+Consider the program order graph of this execution.
+This is a graph whose vertices are the program steps in the execution, and there is an edge from step `i` to step `j`
+if these are consecutive steps by the same thread, or if step `i` is a `fork` operation and step `j` is the first step of the child thread.
+
+Lemma: A path in this graph that does not `wait` (i.e. perform a `wait` operation) for a signal in Sinf is finite.
+Proof: We define the "path fuel" for this path at every point I in the execution (starting when the path starts) as follows:
+it is the multiset of the call permissions at I whose phase is an ancestor of the path's phase at I, plus, for each wait permission
+at degree `d` for a signal S not in Sinf and at a phase `ph` that is an ancestor of the path's phase at I, N call permissions at degree `d`
+where N is (an upper bound for) the number of times S is `wait`ed for on the path. This path fuel strictly decreases at each function call
+or loop backjump on the path, and either decreases or stays unchanged at each step not on the path. By fairness of the scheduler, if the path
+is infinite, there is an infinite descending chain of path fuels, which contradicts the well-foundedness of the degrees.
+This concludes the proof of the lemma.
+
+Now, either Sinf is empty or it is not. If it is empty, then by the lemma, each path is finite. By Koenig's Lemma, this implies the graph
+is finite.
+
+Now assume Sinf is nonempty. Then it has an element S with a minimal level. Consider the path in the program order graph that "carries"
+the obligation for signal S. This path can only `wait` for signals at a strictly lower level than S, so it does not wait for signals in Sinf.
+Therefore, the lemma applies to this path, so it is finite. But that contradicts the fact that S is waited for infinitely often.
+
+This concludes the proof.
+
+*)
+
+
 Require Import Init.Wf Relations.Relations Wellfounded.Lexicographic_Product List Classical ClassicalDescription ClassicalEpsilon.
 Import ListNotations.
 Require Import Lia.
@@ -74,6 +131,7 @@ Parameter degree_lt: degree -> degree -> Prop.
 Axiom degree_lt_trans: transitive _ degree_lt.
 Axiom degree_lt_wf: well_founded degree_lt.
 
+(* Each step by a thread reduces either the size of the thread's command, or the stock of call permissions in the system. *)
 Parameter cmd_size: Type.
 Parameter size_zero: cmd_size.
 Parameter size_lt: cmd_size -> cmd_size -> Prop.
@@ -107,11 +165,14 @@ Record state := State {
   signals: list (level * bool)
 }.
 
+(* Machine configurations *)
+
 Record config := Config {
   cfg_state: state;
   threads: list thread_state
 }.
 
+(* Each machine step is either a burn, a fork, a create-signal, a set-signal, a create-wait-perm, or a wait. *)
 Inductive step_label :=
 | Burn(consumes: (thread_phase * degree))(produces: bag (thread_phase * degree))
 | Fork(forkee_obs: bag signal)
@@ -224,7 +285,9 @@ Axiom fair:
   i <= j /\
   step_threads j = t.
 
+(* The initial stock of call permissions. *)
 Parameter CPs0: bag (thread_phase * degree).
+(* The initial size of the main thread's command. *)
 Parameter main_size0: cmd_size.
 Axiom configs0: configs 0 = Config (State CPs0 Bempty []) [ThreadState main_size0 [] Bempty].
 

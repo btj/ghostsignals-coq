@@ -1,0 +1,6 @@
+name = "ghost-signals"
+version = "0.1.0"
+defaultTargets = ["GhostSignals"]
+
+[[lean_lib]]
+name = "GhostSignals"
