@@ -1,21 +1,25 @@
+import Mathlib.Data.Multiset.Basic
+
 noncomputable section
 
-def Transitive {A : Type} (R : A → A → Prop) := ∀ x y z, R x y → R y z → R x z
+noncomputable section
+
+open Multiset
 
 -- Basic Types and Multisets
-axiom bag : Type → Type
-axiom Bempty {T : Type} : bag T
-axiom Bsing {T : Type} : T → bag T
-axiom Bmem {T : Type} : T → bag T → Prop
-axiom Bplus {T : Type} : bag T → bag T → bag T
-axiom Binsert {T : Type} : T → bag T → bag T
-axiom Bremove1 {T : Type} : T → bag T → bag T
-axiom Bflatmap {A B : Type} : (A → bag B) → bag A → bag B
-axiom Blt {T : Type} : (T → T → Prop) → bag T → bag T → Prop
+abbrev bag := Multiset
+abbrev Bempty {T : Type} : bag T := 0
+abbrev Bsing {T : Type} (e : T) : bag T := {e}
+abbrev Bmem {T : Type} (e : T) (b : bag T) : Prop := e ∈ b
+def Bplus {T : Type} (b1 b2 : bag T) : bag T := sorry
+def Binsert {T : Type} (e : T) (b : bag T) : bag T := sorry
+def Bremove1 {T : Type} [DecidableEq T] (e : T) (b : bag T) : bag T := sorry
+def Bflatmap {A B : Type} (f : A → bag B) (b : bag A) : bag B := sorry
+def Blt {T : Type} (Tlt : T → T → Prop) (b1 b2 : bag T) : Prop := sorry
 
-axiom Blt_trans {T : Type} (Tlt : T → T → Prop) : Transitive Tlt → Transitive (Blt Tlt)
-axiom Blt_wf {T : Type} (Tlt : T → T → Prop) : WellFounded Tlt → WellFounded (Blt Tlt)
-axiom binsert_not_empty {A : Type} (e : A) (b : bag A) : Binsert e b ≠ Bempty
+theorem Blt_trans {T : Type} (Tlt : T → T → Prop) : Transitive (Blt Tlt) := sorry
+theorem Blt_wf {T : Type} (Tlt : T → T → Prop) : WellFounded (Blt Tlt) := sorry
+theorem binsert_not_empty {A : Type} (e : A) (b : bag A) : Binsert e b ≠ Bempty := sorry
 
 def Btimes {T : Type} : Nat → T → bag T
 | 0, _ => Bempty
