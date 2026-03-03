@@ -21,7 +21,7 @@ def Bremove1 {T : Type} [DecidableEq T] (e : T) (b : bag T) : bag T := (b : Mult
 def Bflatmap {A B : Type} (f : A → bag B) (b : bag A) : bag B := (b : Multiset A).bind f
 def Blt {T : Type} [Preorder T] (b1 b2 : bag T) : Prop := @Multiset.IsDershowitzMannaLT T _ b1 b2
 
-theorem Blt_trans {T : Type} [Preorder T] : Transitive (@Blt T _) := 
+theorem Blt_trans {T : Type} [Preorder T] : Transitive (@Blt T _) :=
   fun _ _ _ h1 h2 => Multiset.IsDershowitzMannaLT.trans h1 h2
 theorem Blt_wf {T : Type} [Preorder T] (Hwf : WellFounded (fun (x y : T) => x < y)) : WellFounded (@Blt T _) :=
   have : WellFoundedLT T := ⟨Hwf⟩
@@ -32,17 +32,17 @@ def Btimes {T : Type} : Nat → T → bag T
 | 0, _ => Bempty
 | n + 1, e => Binsert e (Btimes n e)
 
-axiom level : Type
-axiom level_lt : level → level → Prop
-axiom level_le : level → level → Prop
-instance : Preorder level where
+axiom ℒ : Type
+axiom level_lt : ℒ → ℒ → Prop
+axiom level_le : ℒ → ℒ → Prop
+instance : Preorder ℒ where
   le := level_le
   lt := level_lt
   le_refl := sorry
   le_trans := sorry
   lt_iff_le_not_ge := sorry
-axiom level_lt_wf : WellFounded (fun (x y : level) => x < y)
-axiom level_inhabited : Nonempty level
+axiom level_lt_wf : WellFounded (fun (x y : ℒ) => x < y)
+axiom level_inhabited : Nonempty ℒ
 
 axiom degree : Type
 axiom degree_lt : degree → degree → Prop
@@ -106,7 +106,7 @@ structure thread_state where
 structure state where
   callPerms : bag (thread_phase × degree)
   waitPerms : bag (thread_phase × signal × degree)
-  signals : List (level × Bool)
+  signals : List (ℒ × Bool)
 
 structure config where
   cfg_state : state
@@ -115,7 +115,7 @@ structure config where
 inductive step_label where
 | Burn (consumes : thread_phase × degree) (produces : bag (thread_phase × degree))
 | Fork (forkee_obs : bag signal)
-| CreateSignal (s : signal) (lev : level)
+| CreateSignal (s : signal) (lev : ℒ)
 | SetSignal (s : signal)
 | CreateWaitPerm (s : signal) (consumes : thread_phase × degree) (produces : degree)
 | Wait (ph : thread_phase) (s : signal) (d : degree)
@@ -125,7 +125,7 @@ axiom nth_error {A : Type} : List A → Nat → Option A
 inductive thread_step : state → thread_state → step_label → state → thread_state → List thread_state → Prop
 | SBurn (size : cmd_size) (ph : thread_phase) (obs : bag signal) (ph_cp : thread_phase) (d : degree)
     (CPs : bag (thread_phase × degree)) (WPs : bag (thread_phase × signal × degree))
-    (Ss : List (level × Bool)) (P : bag (thread_phase × degree)) (size' : cmd_size) :
+    (Ss : List (ℒ × Bool)) (P : bag (thread_phase × degree)) (size' : cmd_size) :
   size ≠ size_zero →
   (∀ ph' d', Bmem (ph', d') P → is_ancestor_of ph_cp ph' ∧ degree_lt d' d) →
   thread_step
@@ -345,7 +345,7 @@ theorem subtree_cases : ∀ i t j t' (H : thread_alive j t'), i + 1 ≤ j → po
 
 axiom infinite_path : cfg_index → thread
 theorem infinite_path_lemma : ∀ i, has_infinite_subtree i (infinite_path i) := sorry
-theorem infinite_path_is_path : 
+theorem infinite_path_is_path :
   infinite_path 0 = 0 ∧ ∀ i, infinite_path (i + 1) = infinite_path i ∨ forks_at i (infinite_path i) (infinite_path (i + 1)) := sorry
 theorem infinite_path_is_infinite : ∀ i, thread_alive i (infinite_path i) := sorry
 
@@ -358,8 +358,8 @@ inductive exists_dec {A : Type} (P : A → Prop)
 | nex (h : ¬ ∃ x, P x)
 
 axiom decide_exists {A : Type} (P : A → Prop) : exists_dec P
-axiom dummy_level : level
-axiom sig_lev : signal → level
+axiom dummy_level : ℒ
+axiom sig_lev : signal → ℒ
 axiom sig_lt : signal → signal → Prop
 theorem sig_lt_wf : WellFounded sig_lt := sorry
 
@@ -399,7 +399,7 @@ def s_inf0_ob_path (i : cfg_index) : thread :=
 
 theorem s_inf0_ob_path_holds_obligation : ∀ i, signal_creation_step s_inf0 < i → thread_holds_obligation_at i (s_inf0_ob_path i) s_inf0 := sorry
 
-theorem s_inf0_ob_path_is_path : 
+theorem s_inf0_ob_path_is_path :
   s_inf0_ob_path 0 = 0 ∧ ∀ i, s_inf0_ob_path (i + 1) = s_inf0_ob_path i ∨ forks_at i (s_inf0_ob_path i) (s_inf0_ob_path (i + 1)) := sorry
 
 theorem s_inf0_ob_path_is_infinite : ∀ j, thread_alive j (s_inf0_ob_path j) := sorry
