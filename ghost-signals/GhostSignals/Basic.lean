@@ -32,19 +32,6 @@ def Btimes {T : Type} : Nat → T → bag T
 | 0, _ => Bempty
 | n + 1, e => Binsert e (Btimes n e)
 
-
-axiom 𝒟 : Type
-axiom degree_lt : 𝒟 → 𝒟 → Prop
-axiom degree_le : 𝒟 → 𝒟 → Prop
-instance : Preorder 𝒟 where
-  le := degree_le
-  lt := degree_lt
-  le_refl := sorry
-  le_trans := sorry
-  lt_iff_le_not_ge := sorry
-axiom degree_lt_trans : Transitive degree_lt
-axiom degree_lt_wf : WellFounded (fun (x y : 𝒟) => x < y)
-
 axiom cmd_size : Type
 axiom size_zero : cmd_size
 axiom size_lt : cmd_size → cmd_size → Prop
@@ -92,16 +79,16 @@ structure thread_state where
   phase : thread_phase
   obs : bag signal
 
-structure state ℒ where
+structure state ℒ 𝒟 where
   callPerms : bag (thread_phase × 𝒟)
   waitPerms : bag (thread_phase × signal × 𝒟)
   signals : List (ℒ × Bool)
 
-structure config ℒ where
-  cfg_state : state ℒ
+structure config ℒ 𝒟 where
+  cfg_state : state ℒ 𝒟
   threads : List thread_state
 
-inductive step_label ℒ where
+inductive step_label ℒ 𝒟 where
 | Burn (consumes : thread_phase × 𝒟) (produces : bag (thread_phase × 𝒟))
 | Fork (forkee_obs : bag signal)
 | CreateSignal (s : signal) (lev : ℒ)
@@ -111,12 +98,12 @@ inductive step_label ℒ where
 
 axiom nth_error {A : Type} : List A → Nat → Option A
 
-inductive thread_step {ℒ} [LT ℒ] : state ℒ → thread_state → step_label ℒ → state ℒ → thread_state → List thread_state → Prop
+inductive thread_step {ℒ 𝒟} [LT ℒ] [LT 𝒟] : state ℒ 𝒟 → thread_state → step_label ℒ 𝒟 → state ℒ 𝒟 → thread_state → List thread_state → Prop
 | SBurn (size : cmd_size) (ph : thread_phase) (obs : bag signal) (ph_cp : thread_phase) (d : 𝒟)
     (CPs : bag (thread_phase × 𝒟)) (WPs : bag (thread_phase × signal × 𝒟))
     (Ss : List (ℒ × Bool)) (P : bag (thread_phase × 𝒟)) (size' : cmd_size) :
   size ≠ size_zero →
-  (∀ ph' d', Bmem (ph', d') P → is_ancestor_of ph_cp ph' ∧ degree_lt d' d) →
+  (∀ ph' d', Bmem (ph', d') P → is_ancestor_of ph_cp ph' ∧ d' < d) →
   thread_step
     ⟨Binsert (ph_cp, d) CPs, WPs, Ss⟩
     ⟨size, ph, obs⟩
@@ -156,7 +143,7 @@ inductive thread_step {ℒ} [LT ℒ] : state ℒ → thread_state → step_label
 | SCreateWaitPerm (ph_cp dc CPs WPs Ss size ph obs s dp size') :
   size_lt size' size →
   s < Ss.length →
-  degree_lt dp dc →
+  dp < dc →
   thread_step
     ⟨Binsert (ph_cp, dc) CPs, WPs, Ss⟩
     ⟨size, ph, obs⟩
@@ -177,8 +164,8 @@ inductive thread_step {ℒ} [LT ℒ] : state ℒ → thread_state → step_label
     ⟨size', ph, obs⟩
     []
 
-inductive step {ℒ} [LT ℒ]: config ℒ → thread → step_label ℒ → config ℒ → Prop
-| Step (st : state ℒ) (tcfg : thread_state) (t : thread) (lab : step_label ℒ) (st' : state ℒ) (tcfg' : thread_state) (tcfgs : List thread_state) (Ts1 Ts2 : List thread_state) :
+inductive step {ℒ 𝒟} [LT ℒ] [LT 𝒟] : config ℒ 𝒟 → thread → step_label ℒ 𝒟 → config ℒ 𝒟 → Prop
+| Step (st : state ℒ 𝒟) (tcfg : thread_state) (t : thread) (lab : step_label ℒ 𝒟) (st' : state ℒ 𝒟) (tcfg' : thread_state) (tcfgs : List thread_state) (Ts1 Ts2 : List thread_state) :
   t = Ts1.length →
   thread_step st tcfg lab st' tcfg' tcfgs →
   step ⟨st, Ts1 ++ [tcfg] ++ Ts2⟩ t lab ⟨st', Ts1 ++ [tcfg'] ++ Ts2 ++ tcfgs⟩
@@ -191,9 +178,14 @@ instance : Preorder ℒ := sorry
 instance : WellFoundedLT ℒ := sorry
 instance : Inhabited ℒ := sorry
 
-axiom configs : cfg_index → config ℒ
+axiom 𝒟 : Type
+instance : Preorder 𝒟 := sorry
+instance : WellFoundedLT 𝒟 := sorry
+instance : Inhabited 𝒟 := sorry
+
+axiom configs : cfg_index → config ℒ 𝒟
 axiom step_threads : step_index → thread
-axiom labels : step_index → step_label ℒ
+axiom labels : step_index → step_label ℒ 𝒟
 axiom steps_ok : ∀ i, step (configs i) (step_threads i) (labels i) (configs (i + 1))
 
 axiom finished_no_obs :
@@ -202,7 +194,7 @@ axiom finished_no_obs :
   obs = Bempty
 
 inductive thread_alive (i : Nat) : Nat → Prop
-| intro (st : state ℒ) (Ts1 : List thread_state) (size : cmd_size) (ph : thread_phase) (obs : bag signal) (Ts2 : List thread_state) :
+| intro (st : state ℒ 𝒟) (Ts1 : List thread_state) (size : cmd_size) (ph : thread_phase) (obs : bag signal) (Ts2 : List thread_state) :
   configs i = ⟨st, Ts1 ++ [⟨size, ph, obs⟩] ++ Ts2⟩ →
   size ≠ size_zero →
   thread_alive i Ts1.length
@@ -242,7 +234,7 @@ def forks_at (i : step_index) (forker : thread) (forkee : thread) : Prop :=
     Ts.length = forkee
 
 theorem forks_at_step_threads : ∀ i t t', forks_at i t t' → step_threads i = t := sorry
-theorem thread_step_alive : ∀ st tcfg (l : step_label ℒ) st' tcfg' tcfgs, thread_step st tcfg l st' tcfg' tcfgs → tcfg.size ≠ size_zero := sorry
+theorem thread_step_alive : ∀ st tcfg (l : step_label ℒ 𝒟) st' tcfg' tcfgs, thread_step st tcfg l st' tcfg' tcfgs → tcfg.size ≠ size_zero := sorry
 theorem step_threads_alive : ∀ i t, step_threads i = t → thread_alive i t := sorry
 theorem step_threads_alive' : ∀ i, thread_alive i (step_threads i) := sorry
 
@@ -368,7 +360,7 @@ theorem wait_after_creates : ∀ i s, step_waits_for i s → signal_creation_ste
 theorem step_creates_signal_s_inf0 : step_creates_signal (signal_creation_step s_inf0) s_inf0 := sorry
 
 inductive thread_holds_obligation_at (i : step_index) (t : thread) (s : signal) : Prop
-| intro (st : state ℒ) (Ts1 : List thread_state) (sz : cmd_size) (ph : thread_phase) (obs : bag signal) (Ts2 : List thread_state) :
+| intro (st : state ℒ 𝒟) (Ts1 : List thread_state) (sz : cmd_size) (ph : thread_phase) (obs : bag signal) (Ts2 : List thread_state) :
   Ts1.length = t →
   configs i = ⟨st, Ts1 ++ [⟨sz, ph, Binsert s obs⟩] ++ Ts2⟩ →
   thread_holds_obligation_at i t s
