@@ -1,4 +1,5 @@
 import Mathlib.Data.Multiset.Basic
+import Mathlib.Data.Multiset.Bind
 
 noncomputable section
 
@@ -11,10 +12,10 @@ abbrev bag := Multiset
 abbrev Bempty {T : Type} : bag T := 0
 abbrev Bsing {T : Type} (e : T) : bag T := {e}
 abbrev Bmem {T : Type} (e : T) (b : bag T) : Prop := e ∈ b
-def Bplus {T : Type} (b1 b2 : bag T) : bag T := sorry
-def Binsert {T : Type} (e : T) (b : bag T) : bag T := sorry
-def Bremove1 {T : Type} [DecidableEq T] (e : T) (b : bag T) : bag T := sorry
-def Bflatmap {A B : Type} (f : A → bag B) (b : bag A) : bag B := sorry
+def Bplus {T : Type} (b1 b2 : bag T) : bag T := (b1 : Multiset T) + (b2 : Multiset T)
+def Binsert {T : Type} (e : T) (b : bag T) : bag T := e ::ₘ (b : Multiset T)
+def Bremove1 {T : Type} [DecidableEq T] (e : T) (b : bag T) : bag T := (b : Multiset T).erase e
+def Bflatmap {A B : Type} (f : A → bag B) (b : bag A) : bag B := (b : Multiset A).bind f
 def Blt {T : Type} (Tlt : T → T → Prop) (b1 b2 : bag T) : Prop := sorry
 
 theorem Blt_trans {T : Type} (Tlt : T → T → Prop) : Transitive (Blt Tlt) := sorry
