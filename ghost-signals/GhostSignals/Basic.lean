@@ -32,17 +32,18 @@ def Btimes {T : Type} : Nat → T → bag T
 | 0, _ => Bempty
 | n + 1, e => Binsert e (Btimes n e)
 
-axiom degree : Type
-axiom degree_lt : degree → degree → Prop
-axiom degree_le : degree → degree → Prop
-instance : Preorder degree where
+
+axiom 𝒟 : Type
+axiom degree_lt : 𝒟 → 𝒟 → Prop
+axiom degree_le : 𝒟 → 𝒟 → Prop
+instance : Preorder 𝒟 where
   le := degree_le
   lt := degree_lt
   le_refl := sorry
   le_trans := sorry
   lt_iff_le_not_ge := sorry
 axiom degree_lt_trans : Transitive degree_lt
-axiom degree_lt_wf : WellFounded (fun (x y : degree) => x < y)
+axiom degree_lt_wf : WellFounded (fun (x y : 𝒟) => x < y)
 
 axiom cmd_size : Type
 axiom size_zero : cmd_size
@@ -92,8 +93,8 @@ structure thread_state where
   obs : bag signal
 
 structure state ℒ where
-  callPerms : bag (thread_phase × degree)
-  waitPerms : bag (thread_phase × signal × degree)
+  callPerms : bag (thread_phase × 𝒟)
+  waitPerms : bag (thread_phase × signal × 𝒟)
   signals : List (ℒ × Bool)
 
 structure config ℒ where
@@ -101,19 +102,19 @@ structure config ℒ where
   threads : List thread_state
 
 inductive step_label ℒ where
-| Burn (consumes : thread_phase × degree) (produces : bag (thread_phase × degree))
+| Burn (consumes : thread_phase × 𝒟) (produces : bag (thread_phase × 𝒟))
 | Fork (forkee_obs : bag signal)
 | CreateSignal (s : signal) (lev : ℒ)
 | SetSignal (s : signal)
-| CreateWaitPerm (s : signal) (consumes : thread_phase × degree) (produces : degree)
-| Wait (ph : thread_phase) (s : signal) (d : degree)
+| CreateWaitPerm (s : signal) (consumes : thread_phase × 𝒟) (produces : 𝒟)
+| Wait (ph : thread_phase) (s : signal) (d : 𝒟)
 
 axiom nth_error {A : Type} : List A → Nat → Option A
 
 inductive thread_step {ℒ} [LT ℒ] : state ℒ → thread_state → step_label ℒ → state ℒ → thread_state → List thread_state → Prop
-| SBurn (size : cmd_size) (ph : thread_phase) (obs : bag signal) (ph_cp : thread_phase) (d : degree)
-    (CPs : bag (thread_phase × degree)) (WPs : bag (thread_phase × signal × degree))
-    (Ss : List (ℒ × Bool)) (P : bag (thread_phase × degree)) (size' : cmd_size) :
+| SBurn (size : cmd_size) (ph : thread_phase) (obs : bag signal) (ph_cp : thread_phase) (d : 𝒟)
+    (CPs : bag (thread_phase × 𝒟)) (WPs : bag (thread_phase × signal × 𝒟))
+    (Ss : List (ℒ × Bool)) (P : bag (thread_phase × 𝒟)) (size' : cmd_size) :
   size ≠ size_zero →
   (∀ ph' d', Bmem (ph', d') P → is_ancestor_of ph_cp ph' ∧ degree_lt d' d) →
   thread_step
@@ -211,7 +212,7 @@ axiom fair :
   thread_alive i t →
   ∃ j, i ≤ j ∧ step_threads j = t
 
-axiom CPs0 : bag (thread_phase × degree)
+axiom CPs0 : bag (thread_phase × 𝒟)
 axiom main_size0 : cmd_size
 axiom configs0 : configs 0 = ⟨⟨CPs0, Bempty, []⟩, [⟨main_size0, [], Bempty⟩]⟩
 
@@ -277,23 +278,23 @@ attribute [local instance] dec_Sinf
 axiom dec_is_ancestor_of (ph1 ph2 : thread_phase) : Decidable (is_ancestor_of ph1 ph2)
 attribute [local instance] dec_is_ancestor_of
 
-def path_fuel_at (i : cfg_index) : bag degree × cmd_size :=
+def path_fuel_at (i : cfg_index) : bag 𝒟 × cmd_size :=
   let st_Ts := configs i
   let CPs := st_Ts.cfg_state.callPerms
   let WPs := st_Ts.cfg_state.waitPerms
-  let filtered_CPs := Bflatmap (fun cp : thread_phase × degree =>
+  let filtered_CPs := Bflatmap (fun cp : thread_phase × 𝒟 =>
     If (is_ancestor_of cp.1 (P.path_phase_at i)) (Bsing cp.2) Bempty) CPs
-  let filtered_WPs := Bflatmap (fun wp : thread_phase × signal × degree =>
+  let filtered_WPs := Bflatmap (fun wp : thread_phase × signal × 𝒟 =>
     If (is_ancestor_of wp.1 (P.path_phase_at i))
       (if h : Sinf wp.2.1 then Bempty else Btimes ((not_waited_for_as_of wp.2.1 h).val - i) wp.2.2)
       Bempty) WPs
   let tcfg := st_Ts.threads.getD (P.p i) default_thread_state
   (Bplus filtered_CPs filtered_WPs, tcfg.size)
 
-def fuel_lt (x y : bag degree × cmd_size) : Prop :=
+def fuel_lt (x y : bag 𝒟 × cmd_size) : Prop :=
   slexprod Blt size_lt x y
 
-def fuel_le (x y : bag degree × cmd_size) : Prop :=
+def fuel_le (x y : bag 𝒟 × cmd_size) : Prop :=
   clos_refl fuel_lt x y
 
 theorem path_fuel_decreases_at_path_step : ∀ i, P.i0 ≤ i → step_threads i = P.p i → fuel_lt (P.path_fuel_at (i + 1)) (P.path_fuel_at i) := sorry
