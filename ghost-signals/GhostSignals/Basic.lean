@@ -32,13 +32,13 @@ def Btimes {T : Type} : Nat → T → bag T
 | 0, _ => Bempty
 | n + 1, e => Binsert e (Btimes n e)
 
-axiom cmd_size : Type
-axiom size_zero : cmd_size
-axiom size_lt : cmd_size → cmd_size → Prop
+axiom 𝕊 : Type
+axiom size_zero : 𝕊
+axiom size_lt : 𝕊 → 𝕊 → Prop
 axiom size_lt_trans : Transitive size_lt
 axiom size_lt_wf : WellFounded size_lt
 axiom size_zero_minimal : ∀ sz, size_lt sz size_zero → False
-axiom cmd_size_eq_dec : ∀ sz sz' : cmd_size, sz = sz' ∨ sz ≠ sz'
+axiom cmd_size_eq_dec : ∀ sz sz' : 𝕊, sz = sz' ∨ sz ≠ sz'
 
 def slexprod {A B : Type} (R1 : A → A → Prop) (R2 : B → B → Prop) (x y : A × B) : Prop :=
   R1 x.1 y.1 ∨ (x.1 = y.1 ∧ R2 x.2 y.2)
@@ -75,7 +75,7 @@ abbrev signal := Nat
 abbrev thread := Nat
 
 structure thread_state where
-  size : cmd_size
+  size : 𝕊
   phase : thread_phase
   obs : bag signal
 
@@ -99,9 +99,9 @@ inductive step_label ℒ 𝒟 where
 axiom nth_error {A : Type} : List A → Nat → Option A
 
 inductive thread_step {ℒ 𝒟} [LT ℒ] [LT 𝒟] : state ℒ 𝒟 → thread_state → step_label ℒ 𝒟 → state ℒ 𝒟 → thread_state → List thread_state → Prop
-| SBurn (size : cmd_size) (ph : thread_phase) (obs : bag signal) (ph_cp : thread_phase) (d : 𝒟)
+| SBurn (size : 𝕊) (ph : thread_phase) (obs : bag signal) (ph_cp : thread_phase) (d : 𝒟)
     (CPs : bag (thread_phase × 𝒟)) (WPs : bag (thread_phase × signal × 𝒟))
-    (Ss : List (ℒ × Bool)) (P : bag (thread_phase × 𝒟)) (size' : cmd_size) :
+    (Ss : List (ℒ × Bool)) (P : bag (thread_phase × 𝒟)) (size' : 𝕊) :
   size ≠ size_zero →
   (∀ ph' d', Bmem (ph', d') P → is_ancestor_of ph_cp ph' ∧ d' < d) →
   thread_step
@@ -194,7 +194,7 @@ axiom finished_no_obs :
   obs = Bempty
 
 inductive thread_alive (i : Nat) : Nat → Prop
-| intro (st : state ℒ 𝒟) (Ts1 : List thread_state) (size : cmd_size) (ph : thread_phase) (obs : bag signal) (Ts2 : List thread_state) :
+| intro (st : state ℒ 𝒟) (Ts1 : List thread_state) (size : 𝕊) (ph : thread_phase) (obs : bag signal) (Ts2 : List thread_state) :
   configs i = ⟨st, Ts1 ++ [⟨size, ph, obs⟩] ++ Ts2⟩ →
   size ≠ size_zero →
   thread_alive i Ts1.length
@@ -205,7 +205,7 @@ axiom fair :
   ∃ j, i ≤ j ∧ step_threads j = t
 
 axiom CPs0 : bag (thread_phase × 𝒟)
-axiom main_size0 : cmd_size
+axiom main_size0 : 𝕊
 axiom configs0 : configs 0 = ⟨⟨CPs0, Bempty, []⟩, [⟨main_size0, [], Bempty⟩]⟩
 
 def step_waits_for (i : step_index) (s : signal) : Prop :=
@@ -270,7 +270,7 @@ attribute [local instance] dec_Sinf
 axiom dec_is_ancestor_of (ph1 ph2 : thread_phase) : Decidable (is_ancestor_of ph1 ph2)
 attribute [local instance] dec_is_ancestor_of
 
-def path_fuel_at (i : cfg_index) : bag 𝒟 × cmd_size :=
+def path_fuel_at (i : cfg_index) : bag 𝒟 × 𝕊 :=
   let st_Ts := configs i
   let CPs := st_Ts.cfg_state.callPerms
   let WPs := st_Ts.cfg_state.waitPerms
@@ -283,10 +283,10 @@ def path_fuel_at (i : cfg_index) : bag 𝒟 × cmd_size :=
   let tcfg := st_Ts.threads.getD (P.p i) default_thread_state
   (Bplus filtered_CPs filtered_WPs, tcfg.size)
 
-def fuel_lt (x y : bag 𝒟 × cmd_size) : Prop :=
+def fuel_lt (x y : bag 𝒟 × 𝕊) : Prop :=
   slexprod Blt size_lt x y
 
-def fuel_le (x y : bag 𝒟 × cmd_size) : Prop :=
+def fuel_le (x y : bag 𝒟 × 𝕊) : Prop :=
   clos_refl fuel_lt x y
 
 theorem path_fuel_decreases_at_path_step : ∀ i, P.i0 ≤ i → step_threads i = P.p i → fuel_lt (P.path_fuel_at (i + 1)) (P.path_fuel_at i) := sorry
@@ -360,7 +360,7 @@ theorem wait_after_creates : ∀ i s, step_waits_for i s → signal_creation_ste
 theorem step_creates_signal_s_inf0 : step_creates_signal (signal_creation_step s_inf0) s_inf0 := sorry
 
 inductive thread_holds_obligation_at (i : step_index) (t : thread) (s : signal) : Prop
-| intro (st : state ℒ 𝒟) (Ts1 : List thread_state) (sz : cmd_size) (ph : thread_phase) (obs : bag signal) (Ts2 : List thread_state) :
+| intro (st : state ℒ 𝒟) (Ts1 : List thread_state) (sz : 𝕊) (ph : thread_phase) (obs : bag signal) (Ts2 : List thread_state) :
   Ts1.length = t →
   configs i = ⟨st, Ts1 ++ [⟨sz, ph, Binsert s obs⟩] ++ Ts2⟩ →
   thread_holds_obligation_at i t s
