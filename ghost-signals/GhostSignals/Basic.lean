@@ -1,5 +1,6 @@
 import Mathlib.Data.Multiset.Basic
 import Mathlib.Data.Multiset.Bind
+import Mathlib.Data.Multiset.DershowitzManna
 
 noncomputable section
 
@@ -16,10 +17,13 @@ def Bplus {T : Type} (b1 b2 : bag T) : bag T := (b1 : Multiset T) + (b2 : Multis
 def Binsert {T : Type} (e : T) (b : bag T) : bag T := e ::ₘ (b : Multiset T)
 def Bremove1 {T : Type} [DecidableEq T] (e : T) (b : bag T) : bag T := (b : Multiset T).erase e
 def Bflatmap {A B : Type} (f : A → bag B) (b : bag A) : bag B := (b : Multiset A).bind f
-def Blt {T : Type} (Tlt : T → T → Prop) (b1 b2 : bag T) : Prop := sorry
+def Blt {T : Type} [Preorder T] (b1 b2 : bag T) : Prop := @Multiset.IsDershowitzMannaLT T _ b1 b2
 
-theorem Blt_trans {T : Type} (Tlt : T → T → Prop) : Transitive (Blt Tlt) := sorry
-theorem Blt_wf {T : Type} (Tlt : T → T → Prop) : WellFounded (Blt Tlt) := sorry
+theorem Blt_trans {T : Type} [Preorder T] : Transitive (@Blt T _) := 
+  fun _ _ _ h1 h2 => Multiset.IsDershowitzMannaLT.trans h1 h2
+theorem Blt_wf {T : Type} [Preorder T] (Hwf : WellFounded (fun (x y : T) => x < y)) : WellFounded (@Blt T _) :=
+  have : WellFoundedLT T := ⟨Hwf⟩
+  Multiset.wellFounded_isDershowitzMannaLT
 theorem binsert_not_empty {A : Type} (e : A) (b : bag A) : Binsert e b ≠ Bempty := sorry
 
 def Btimes {T : Type} : Nat → T → bag T
@@ -28,13 +32,27 @@ def Btimes {T : Type} : Nat → T → bag T
 
 axiom level : Type
 axiom level_lt : level → level → Prop
-axiom level_lt_wf : WellFounded level_lt
+axiom level_le : level → level → Prop
+instance : Preorder level where
+  le := level_le
+  lt := level_lt
+  le_refl := sorry
+  le_trans := sorry
+  lt_iff_le_not_ge := sorry
+axiom level_lt_wf : WellFounded (fun (x y : level) => x < y)
 axiom level_inhabited : Nonempty level
 
 axiom degree : Type
 axiom degree_lt : degree → degree → Prop
+axiom degree_le : degree → degree → Prop
+instance : Preorder degree where
+  le := degree_le
+  lt := degree_lt
+  le_refl := sorry
+  le_trans := sorry
+  lt_iff_le_not_ge := sorry
 axiom degree_lt_trans : Transitive degree_lt
-axiom degree_lt_wf : WellFounded degree_lt
+axiom degree_lt_wf : WellFounded (fun (x y : degree) => x < y)
 
 axiom cmd_size : Type
 axiom size_zero : cmd_size
@@ -278,7 +296,7 @@ def path_fuel_at (i : cfg_index) : bag degree × cmd_size :=
   (Bplus filtered_CPs filtered_WPs, tcfg.size)
 
 def fuel_lt (x y : bag degree × cmd_size) : Prop :=
-  slexprod (Blt degree_lt) size_lt x y
+  slexprod Blt size_lt x y
 
 def fuel_le (x y : bag degree × cmd_size) : Prop :=
   clos_refl fuel_lt x y
