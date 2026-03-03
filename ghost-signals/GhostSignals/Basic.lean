@@ -2,6 +2,8 @@ import Mathlib.Data.Multiset.Basic
 import Mathlib.Data.Multiset.Bind
 import Mathlib.Data.Multiset.DershowitzManna
 
+set_option warn.sorry false
+
 noncomputable section
 
 noncomputable section
