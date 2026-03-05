@@ -6,8 +6,6 @@ set_option warn.sorry false
 
 noncomputable section
 
-noncomputable section
-
 open Multiset
 
 -- Basic Types and Multisets
@@ -48,7 +46,8 @@ theorem clos_refl_trans_r {A : Type} (R : A → A → Prop) (x y z : A) :
 theorem clos_refl_transitive {A : Type} (R : A → A → Prop) :
   Transitive R → Transitive (clos_refl R) := sorry
 
-def If {T : Type} (P : Prop) [Decidable P] (t1 t2 : T) : T :=
+def If {T : Type} (P : Prop) (t1 t2 : T) : T :=
+  open Classical in
   if P then t1 else t2
 
 inductive phasecomp where
@@ -89,7 +88,7 @@ inductive step_label (ℒ 𝒟 : Type) where
 | CreateWaitPerm (s : signal) (consumes : thread_phase × 𝒟) (produces : 𝒟)
 | Wait (ph : thread_phase) (s : signal) (d : 𝒟)
 
-axiom nth_error {A : Type} : List A → Nat → Option A
+def nth_error {A : Type} : List A → Nat → Option A := (·[·]?)
 
 inductive thread_step {ℒ 𝒟 𝕊 : Type} [LT ℒ] [LT 𝒟] [LT 𝕊] : state ℒ 𝒟 → thread_state 𝕊 → step_label ℒ 𝒟 → state ℒ 𝒟 → thread_state 𝕊 → List (thread_state 𝕊) → Prop
 | SBurn (size : 𝕊) (ph : thread_phase) (obs : bag signal) (ph_cp : thread_phase) (d : 𝒟)
@@ -166,121 +165,118 @@ inductive step {ℒ 𝒟 𝕊 : Type} [LT ℒ] [LT 𝒟] [LT 𝕊] : config ℒ 
 abbrev cfg_index := Nat
 abbrev step_index := Nat
 
-axiom ℒ : Type
-instance : Preorder ℒ := sorry
-instance : WellFoundedLT ℒ := sorry
-instance : Inhabited ℒ := sorry
+structure Execution
+    (ℒ : Type) [Preorder ℒ] [WellFoundedLT ℒ] [Inhabited ℒ]
+    (𝒟 : Type) [Preorder 𝒟] [WellFoundedLT 𝒟] [Inhabited 𝒟]
+    (𝕊 : Type) [Preorder 𝕊] [WellFoundedLT 𝕊] [Inhabited 𝕊] [OrderBot 𝕊]
+  where
+    configs : cfg_index → config ℒ 𝒟 𝕊
+    step_threads : step_index → thread
+    labels : step_index → step_label ℒ 𝒟
+    steps_ok : ∀ i, step (configs i) (step_threads i) (labels i) (configs (i + 1))
 
-axiom 𝒟 : Type
-instance : Preorder 𝒟 := sorry
-instance : WellFoundedLT 𝒟 := sorry
-instance : Inhabited 𝒟 := sorry
+    finished_no_obs :
+      ∀ i st Ts1 ph obs Ts2,
+      configs i = ⟨st, Ts1 ++ [⟨size_zero, ph, obs⟩] ++ Ts2⟩ →
+      obs = Bempty
 
-axiom 𝕊 : Type
-instance : Preorder 𝕊 := sorry
-instance : WellFoundedLT 𝕊 := sorry
-instance : Inhabited 𝕊 := sorry
-instance : OrderBot 𝕊 := sorry
+    CPs0 : bag (thread_phase × 𝒟)
+    main_size0 : 𝕊
+    configs0 : configs 0 = ⟨⟨CPs0, Bempty, []⟩, [⟨main_size0, [], Bempty⟩]⟩
 
-axiom configs : cfg_index → config ℒ 𝒟 𝕊
-axiom step_threads : step_index → thread
-axiom labels : step_index → step_label ℒ 𝒟
-axiom steps_ok : ∀ i, step (configs i) (step_threads i) (labels i) (configs (i + 1))
+variable {ℒ : Type} [Preorder ℒ] [WellFoundedLT ℒ] [Inhabited ℒ]
+variable {𝒟 : Type} [Preorder 𝒟] [WellFoundedLT 𝒟] [Inhabited 𝒟]
+variable {𝕊 : Type} [Preorder 𝕊] [WellFoundedLT 𝕊] [Inhabited 𝕊] [OrderBot 𝕊]
 
-axiom finished_no_obs :
-  ∀ i st Ts1 ph obs Ts2,
-  configs i = ⟨st, Ts1 ++ [⟨size_zero, ph, obs⟩] ++ Ts2⟩ →
-  obs = Bempty
-
-inductive thread_alive (i : Nat) : Nat → Prop
+inductive thread_alive (E : Execution ℒ 𝒟 𝕊) (i : Nat) : Nat → Prop
 | intro (st : state ℒ 𝒟) (Ts1 : List (thread_state 𝕊)) (size : 𝕊) (ph : thread_phase) (obs : bag signal) (Ts2 : List (thread_state 𝕊)) :
-  configs i = ⟨st, Ts1 ++ [⟨size, ph, obs⟩] ++ Ts2⟩ →
-  size ≠ size_zero →
-  thread_alive i Ts1.length
+  E.configs i = ⟨st, Ts1 ++ [⟨size, ph, obs⟩] ++ Ts2⟩ →
+  size ≠ ⊥ →
+  thread_alive E i Ts1.length
 
-axiom fair :
+variable (E : Execution ℒ 𝒟 𝕊)
+
+def fair :=
   ∀ i t,
-  thread_alive i t →
-  ∃ j, i ≤ j ∧ step_threads j = t
-
-axiom CPs0 : bag (thread_phase × 𝒟)
-axiom main_size0 : 𝕊
-axiom configs0 : configs 0 = ⟨⟨CPs0, Bempty, []⟩, [⟨main_size0, [], Bempty⟩]⟩
+  thread_alive E i t →
+  ∃ j, i ≤ j ∧ E.step_threads j = t
 
 def step_waits_for (i : step_index) (s : signal) : Prop :=
-  ∃ ph d, labels i = step_label.Wait ph s d
+  ∃ ph d, E.labels i = step_label.Wait ph s d
 
 section Signal
 
 variable (s : signal)
 
-def Sinf : Prop := ∀ i, ∃ j, i ≤ j ∧ step_waits_for j s
+def Sinf : Prop := ∀ i, ∃ j, i ≤ j ∧ step_waits_for E j s
 
-variable (not_Sinf : ¬ Sinf s)
+variable (not_Sinf : ¬ Sinf E s)
 
 def is_not_waited_for_as_of (i : step_index) : Prop :=
-  ∀ j, i ≤ j → ¬ step_waits_for j s
+  ∀ j, i ≤ j → ¬ step_waits_for E j s
 
-axiom not_waited_for_as_of (H : ¬ Sinf s) : { i : step_index // is_not_waited_for_as_of s i }
+def not_waited_for_as_of (H : ¬ Sinf E s) : { i : step_index // is_not_waited_for_as_of E s i } := sorry
 
 end Signal
 
 def forks_at (i : step_index) (forker : thread) (forkee : thread) : Prop :=
   ∃ st Ts forkee_obs,
-    configs i = ⟨st, Ts⟩ ∧
-    step_threads i = forker ∧
-    labels i = step_label.Fork forkee_obs ∧
+    E.configs i = ⟨st, Ts⟩ ∧
+    E.step_threads i = forker ∧
+    E.labels i = step_label.Fork forkee_obs ∧
     Ts.length = forkee
 
-theorem forks_at_step_threads : ∀ i t t', forks_at i t t' → step_threads i = t := sorry
-theorem thread_step_alive : ∀ st tcfg (l : step_label ℒ 𝒟) st' tcfg' tcfgs, thread_step (𝕊:=𝕊) st tcfg l st' tcfg' tcfgs → tcfg.size ≠ size_zero := sorry
-theorem step_threads_alive : ∀ i t, step_threads i = t → thread_alive i t := sorry
-theorem step_threads_alive' : ∀ i, thread_alive i (step_threads i) := sorry
+theorem forks_at_step_threads : ∀ i t t', forks_at E i t t' → E.step_threads i = t := sorry
+theorem thread_step_alive : ∀ st tcfg (l : step_label ℒ 𝒟) st' tcfg' tcfgs, thread_step (𝕊:=𝕊) st tcfg l st' tcfg' tcfgs → tcfg.size ≠ ⊥ := sorry
+theorem step_threads_alive : ∀ i t, E.step_threads i = t → thread_alive E i t := sorry
+theorem step_threads_alive' : ∀ i, thread_alive E i (E.step_threads i) := sorry
 
 structure InfinitePath where
   p : cfg_index → thread
-  is_path : p 0 = 0 ∧ ∀ i, p (i + 1) = p i ∨ forks_at i (p i) (p (i + 1))
-  is_infinite : ∀ j, thread_alive j (p j)
+  is_path : p 0 = 0 ∧ ∀ i, p (i + 1) = p i ∨ forks_at E i (p i) (p (i + 1))
+  is_infinite : ∀ j, thread_alive E j (p j)
   i0 : step_index
-  waits_not_Sinf : ∀ s, (∃ j, i0 ≤ j ∧ step_threads j = p j ∧ step_waits_for j s) → ¬ Sinf s
+  waits_not_Sinf : ∀ s, (∃ j, i0 ≤ j ∧ E.step_threads j = p j ∧ step_waits_for E j s) → ¬ Sinf E s
 
 namespace InfinitePath
 
-variable (P : InfinitePath)
+variable (P : InfinitePath E)
 
-theorem path_fork_step : ∀ i j, i ≤ j → P.p j ≠ P.p i → ∃ k, i ≤ k ∧ P.p k = P.p i ∧ step_threads k = P.p k := sorry
-theorem path_next_step : ∀ i, thread_alive i (P.p i) → ∃ j, i ≤ j ∧ step_threads j = P.p j := sorry
+theorem path_fork_step : ∀ i j, i ≤ j → P.p j ≠ P.p i → ∃ k, i ≤ k ∧ P.p k = P.p i ∧ E.step_threads k = P.p k := sorry
+def path_is_alive j := thread_alive E j (P.p j)
+theorem path_next_step : ∀ i, path_is_alive E P i → ∃ j, i ≤ j ∧ E.step_threads j = P.p j := sorry
+
+def path_is_infinite := ∀ j, path_is_alive E P j
 
 def path_waits_for_signal_as_of (s : signal) (i : step_index) : Prop :=
-  ∃ j, i ≤ j ∧ step_threads j = P.p j ∧ step_waits_for j s
+  ∃ j, i ≤ j ∧ E.step_threads j = P.p j ∧ step_waits_for E j s
 
-axiom default_thread_state : thread_state 𝕊
+def default_thread_state : thread_state 𝕊 := ⟨default, [], Bempty⟩
 
-def path_phase_at (i : cfg_index) : thread_phase :=
-  let st_Ts := configs i
-  let tcfg := st_Ts.threads.getD (P.p i) default_thread_state
+instance : Inhabited (thread_state 𝕊) := ⟨default_thread_state⟩
+
+def path_phase_at {E : Execution ℒ 𝒟 𝕊} (P : InfinitePath E) (i : cfg_index) : thread_phase :=
+  let st_Ts := E.configs i
+  let tcfg := st_Ts.threads[P.p i]!
   tcfg.phase
 
--- Provide Decidable for Sinf
-axiom dec_Sinf (s : signal) : Decidable (Sinf s)
-attribute [local instance] dec_Sinf
-
--- Provide Decidable for is_ancestor_of
-axiom dec_is_ancestor_of (ph1 ph2 : thread_phase) : Decidable (is_ancestor_of ph1 ph2)
-attribute [local instance] dec_is_ancestor_of
-
-def path_fuel_at (i : cfg_index) : bag 𝒟 × 𝕊 :=
-  let st_Ts := configs i
-  let CPs := st_Ts.cfg_state.callPerms
-  let WPs := st_Ts.cfg_state.waitPerms
+def path_fuel_at {E : Execution ℒ 𝒟 𝕊} (P : InfinitePath E) (i : cfg_index) : bag 𝒟 × 𝕊 :=
+  let ⟨ st, Ts ⟩ := E.configs i
+  let ⟨ CPs, WPs, _Ss ⟩ := st
   let filtered_CPs := Bflatmap (fun cp : thread_phase × 𝒟 =>
-    If (is_ancestor_of cp.1 (P.path_phase_at i)) (Bsing cp.2) Bempty) CPs
+    let ⟨ ph, d ⟩ := cp
+    If (is_ancestor_of ph (P.path_phase_at i)) (Bsing d) Bempty
+  ) CPs
   let filtered_WPs := Bflatmap (fun wp : thread_phase × signal × 𝒟 =>
-    If (is_ancestor_of wp.1 (P.path_phase_at i))
-      (if h : Sinf wp.2.1 then Bempty else Btimes ((not_waited_for_as_of wp.2.1 h).val - i) wp.2.2)
-      Bempty) WPs
-  let tcfg := st_Ts.threads.getD (P.p i) default_thread_state
-  (Bplus filtered_CPs filtered_WPs, tcfg.size)
+    let ⟨ ph, s, d ⟩ := wp
+    If (is_ancestor_of ph (P.path_phase_at i)) (
+      match Classical.propDecidable (Sinf E s) with
+      | isTrue _ => Bempty
+      | isFalse Hnot_Sinf => Btimes (not_waited_for_as_of E s Hnot_Sinf).1 d
+    ) Bempty
+  ) WPs
+  let ⟨ size, _ph, _obs ⟩ := Ts[P.p i]!
+  (Bplus filtered_CPs filtered_WPs, size)
 
 def fuel_lt (x y : bag 𝒟 × 𝕊) : Prop :=
   slexprod Blt (· < ·) x y
@@ -288,55 +284,55 @@ def fuel_lt (x y : bag 𝒟 × 𝕊) : Prop :=
 def fuel_le (x y : bag 𝒟 × 𝕊) : Prop :=
   clos_refl fuel_lt x y
 
-theorem path_fuel_decreases_at_path_step : ∀ i, P.i0 ≤ i → step_threads i = P.p i → fuel_lt (P.path_fuel_at (i + 1)) (P.path_fuel_at i) := sorry
-theorem path_fuel_does_not_increase_at_non_path_step : ∀ i, P.i0 ≤ i → step_threads i ≠ P.p i → fuel_le (P.path_fuel_at (i + 1)) (P.path_fuel_at i) := sorry
+theorem path_fuel_decreases_at_path_step : ∀ i, P.i0 ≤ i → E.step_threads i = P.p i → fuel_lt (P.path_fuel_at (i + 1)) (P.path_fuel_at i) := sorry
+theorem path_fuel_does_not_increase_at_non_path_step : ∀ i, P.i0 ≤ i → E.step_threads i ≠ P.p i → fuel_le (P.path_fuel_at (i + 1)) (P.path_fuel_at i) := sorry
 
-theorem fuel_lt_transitive : Transitive fuel_lt := sorry
-theorem fuel_le_transitive : Transitive fuel_le := sorry
-theorem fuel_lt_le : ∀ x y z, fuel_lt x y → fuel_le y z → fuel_lt x z := sorry
+theorem fuel_lt_transitive : Transitive (fuel_lt (𝒟:=𝒟) (𝕊:=𝕊)) := sorry
+theorem fuel_le_transitive : Transitive (fuel_le (𝒟:=𝒟) (𝕊:=𝕊)) := sorry
+theorem fuel_lt_le : ∀ x y z, fuel_lt (𝒟:=𝒟) (𝕊:=𝕊) x y → fuel_le y z → fuel_lt x z := sorry
 theorem path_fuel_mono : ∀ i j, P.i0 ≤ i → i ≤ j → fuel_le (P.path_fuel_at j) (P.path_fuel_at i) := sorry
-theorem path_fuel_wf : WellFounded fuel_lt := sorry
+theorem path_fuel_wf : WellFounded (fuel_lt (𝒟:=𝒟) (𝕊:=𝕊)) := sorry
 
-theorem path_not_infinite : False := sorry
+theorem path_not_infinite (P : InfinitePath E) : False := sorry
 
 end InfinitePath
 
 -- Remainder of file translations
-theorem cmd_greater_not_zero : ∀ (sz sz' : 𝕊), sz < sz' → sz' ≠ size_zero := sorry
-theorem preserve_suspended_threads : ∀ i idx, step (configs i) (step_threads i) (labels i) (configs (i + 1)) →
-  idx < (configs i).threads.length → idx ≠ step_threads i →
-  (configs i).threads.getD idx default_thread_state = (configs (i + 1)).threads.getD idx default_thread_state := sorry
+theorem cmd_greater_not_zero : ∀ (sz sz' : 𝕊), sz < sz' → sz' ≠ ⊥ := sorry
+theorem preserve_suspended_threads : ∀ i idx, step (E.configs i) (E.step_threads i) (E.labels i) (E.configs (i + 1)) →
+  idx < (E.configs i).threads.length → idx ≠ E.step_threads i →
+  (E.configs i).threads[idx]! = (E.configs (i + 1)).threads[idx]! := sorry
 
-theorem fork_extra_thread : ∀ i, step (configs i) (step_threads i) (labels i) (configs (i + 1)) →
-  (configs i).threads.length < (configs (i + 1)).threads.length →
-  ∃ obs', labels i = step_label.Fork obs' := sorry
+theorem fork_extra_thread : ∀ i, step (E.configs i) (E.step_threads i) (E.labels i) (E.configs (i + 1)) →
+  (E.configs i).threads.length < (E.configs (i + 1)).threads.length →
+  ∃ obs', E.labels i = step_label.Fork obs' := sorry
 
-theorem point_pred : ∀ i t, thread_alive (i + 1) t → thread_alive i t ∨ ∃ t', forks_at i t' t := sorry
+theorem point_pred : ∀ i t, thread_alive E (i + 1) t → thread_alive E i t ∨ ∃ t', forks_at E i t' t := sorry
 
-axiom point_path : ∀ i t, thread_alive i t → cfg_index → thread
-theorem thread_alive_0 : ∀ t, thread_alive 0 t → t = 0 := sorry
-theorem point_path_alive : ∀ i t (H : thread_alive i t) j, j ≤ i → thread_alive j (point_path i t H j) := sorry
-theorem point_path_is_path : ∀ i t (H : thread_alive i t),
-  (point_path i t H 0 = 0 ∧ ∀ j, point_path i t H (j + 1) = point_path i t H j ∨ forks_at j (point_path i t H j) (point_path i t H (j + 1))) := sorry
+def point_path (E : Execution ℒ 𝒟 𝕊) : ∀ i t, thread_alive E i t → cfg_index → thread := sorry
+theorem thread_alive_0 : ∀ t, thread_alive E 0 t → t = 0 := sorry
+theorem point_path_alive : ∀ i t (H : thread_alive E i t) j, j ≤ i → thread_alive E j (point_path E i t H j) := sorry
+theorem point_path_is_path : ∀ i t (H : thread_alive E i t),
+  (point_path E i t H 0 = 0 ∧ ∀ j, point_path E i t H (j + 1) = point_path E i t H j ∨ forks_at E j (point_path E i t H j) (point_path E i t H (j + 1))) := sorry
 
-axiom subtree_alive_at : cfg_index → thread → cfg_index → Prop
-axiom has_infinite_subtree : cfg_index → thread → Prop
+def subtree_alive_at : cfg_index → thread → cfg_index → Prop := sorry
+def has_infinite_subtree : cfg_index → thread → Prop := sorry
 theorem subtree_alive_at_mono : ∀ i t j k, i ≤ j → j ≤ k → subtree_alive_at i t k → subtree_alive_at i t j := sorry
 theorem not_forall_exists_not : ∀ {A : Type} (P : A → Prop), ¬ (∀ x, P x) → ∃ x, ¬ P x := sorry
-theorem point_path_at_point : ∀ i t (H : thread_alive i t), point_path i t H i = t := sorry
-theorem forks_at_unique : ∀ i t t' t'', forks_at i t t' → forks_at i t t'' → t' = t'' := sorry
-theorem subtree_cases : ∀ i t j t' (H : thread_alive j t'), i + 1 ≤ j → point_path j t' H i = t →
-  point_path j t' H (i + 1) = t ∨ ∃ t'', forks_at i t t'' ∧ point_path j t' H (i + 1) = t'' := sorry
+theorem point_path_at_point : ∀ i t (H : thread_alive E i t), point_path E i t H i = t := sorry
+theorem forks_at_unique : ∀ i t t' t'', forks_at E i t t' → forks_at E i t t'' → t' = t'' := sorry
+theorem subtree_cases : ∀ i t j t' (H : thread_alive E j t'), i + 1 ≤ j → point_path E j t' H i = t →
+  point_path E j t' H (i + 1) = t ∨ ∃ t'', forks_at E i t t'' ∧ point_path E j t' H (i + 1) = t'' := sorry
 
-axiom infinite_path : cfg_index → thread
+variable (infinite_path : cfg_index → thread)
 theorem infinite_path_lemma : ∀ i, has_infinite_subtree i (infinite_path i) := sorry
 theorem infinite_path_is_path :
-  infinite_path 0 = 0 ∧ ∀ i, infinite_path (i + 1) = infinite_path i ∨ forks_at i (infinite_path i) (infinite_path (i + 1)) := sorry
-theorem infinite_path_is_infinite : ∀ i, thread_alive i (infinite_path i) := sorry
+  infinite_path 0 = 0 ∧ ∀ i, infinite_path (i + 1) = infinite_path i ∨ forks_at E i (infinite_path i) (infinite_path (i + 1)) := sorry
+theorem infinite_path_is_infinite : ∀ i, thread_alive E i (infinite_path i) := sorry
 
-theorem not_not_Sinf (Hnot_Sinf : ∀ s, ¬ Sinf s) : False := sorry
+theorem not_not_Sinf (Hnot_Sinf : ∀ s, ¬ Sinf E s) : False := sorry
 
-axiom s_inf : { s // Sinf s }
+axiom s_inf : { s // Sinf E s }
 
 inductive exists_dec {A : Type} (P : A → Prop)
 | ex (x : A) (h : P x)
