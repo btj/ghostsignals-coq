@@ -231,9 +231,12 @@ theorem thread_step_alive : ∀ st tcfg (l : step_label ℒ 𝒟) st' tcfg' tcfg
 theorem step_threads_alive : ∀ i t, E.step_threads i = t → thread_alive E i t := sorry
 theorem step_threads_alive' : ∀ i, thread_alive E i (E.step_threads i) := sorry
 
+def is_path (p : cfg_index → thread) : Prop :=
+  p 0 = 0 ∧ ∀ i, p (i + 1) = p i ∨ forks_at E i (p i) (p (i + 1))
+
 structure InfinitePath where
   p : cfg_index → thread
-  is_path : p 0 = 0 ∧ ∀ i, p (i + 1) = p i ∨ forks_at E i (p i) (p (i + 1))
+  is_path : is_path E p
   is_infinite : ∀ j, thread_alive E j (p j)
   i0 : step_index
   waits_not_Sinf : ∀ s, (∃ j, i0 ≤ j ∧ E.step_threads j = p j ∧ step_waits_for E j s) → ¬ Sinf E s
@@ -309,11 +312,41 @@ theorem fork_extra_thread : ∀ i, step (E.configs i) (E.step_threads i) (E.labe
 
 theorem point_pred : ∀ i t, thread_alive E (i + 1) t → thread_alive E i t ∨ ∃ t', forks_at E i t' t := sorry
 
-def point_path (E : Execution ℒ 𝒟 𝕊) : ∀ i t, thread_alive E i t → cfg_index → thread := sorry
+inductive SumBool (P Q : Prop) : Type where
+| inl (h : P) : SumBool P Q
+| inr (h : Q) : SumBool P Q
+
+def decide : P ∨ Q → SumBool P Q := by
+  intro h
+  cases Classical.propDecidable P
+  case isTrue HP =>
+    exact SumBool.inl HP
+  case isFalse HnP =>
+    exact SumBool.inr (Or.resolve_left h HnP)
+
+def point_path (E : Execution ℒ 𝒟 𝕊) i t : ∀ (Halive : thread_alive E i t) (j : cfg_index), thread := by
+  cases i
+  case zero =>
+    intro Halive j
+    exact 0
+  case succ i =>
+    intro Halive j
+    cases Classical.propDecidable (i.succ ≤ j)
+    case isTrue Hle =>
+      exact t
+    case isFalse Hnle =>
+      cases decide (point_pred E i t Halive)
+      case inl Halive' =>
+        exact point_path E i t Halive' j
+      case inr Hforks =>
+        let t' := Classical.choose Hforks
+        let Ht' := Classical.choose_spec Hforks
+        exact point_path E i t' (step_threads_alive _ _ _ (forks_at_step_threads E i t' t Ht')) j
+
 theorem thread_alive_0 : ∀ t, thread_alive E 0 t → t = 0 := sorry
 theorem point_path_alive : ∀ i t (H : thread_alive E i t) j, j ≤ i → thread_alive E j (point_path E i t H j) := sorry
 theorem point_path_is_path : ∀ i t (H : thread_alive E i t),
-  (point_path E i t H 0 = 0 ∧ ∀ j, point_path E i t H (j + 1) = point_path E i t H j ∨ forks_at E j (point_path E i t H j) (point_path E i t H (j + 1))) := sorry
+  is_path (point_path i t H) := sorry
 
 def subtree_alive_at : cfg_index → thread → cfg_index → Prop := sorry
 def has_infinite_subtree : cfg_index → thread → Prop := sorry
